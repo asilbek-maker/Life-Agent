@@ -1148,6 +1148,7 @@ function paintChat() {
   const intro = `<div class="msg bot">Hi! Tell me what you did today in normal words, like “bench 60kg 4x8, then studied 2 hours of math”. I'll save it to the right app. You can also ask how your week went, or set a goal.</div>`;
   log.innerHTML = intro + chat.map((m) => {
     if (m.role === "user") return `<div class="msg user">${esc(m.text)}</div>`;
+    if (m.html) return `<div class="msg bot" style="white-space:normal">${m.html}</div>`;
     const notes = m.notes.length ? `<div class="notes">${m.notes.map((n) => `<span class="note a-${esc(n.area)}">✓ ${esc(n.text)}</span>`).join("")}</div>` : "";
     const body = m.text ? mdLite(m.text) : m.pending ? (m.notes.length ? "Working…" : "Thinking…") : "";
     return `<div class="msg bot ${m.err ? "err" : ""} ${m.pending && !m.text ? "thinking" : ""}">${body}${notes}</div>`;
@@ -1175,7 +1176,22 @@ async function sendToCoach(text) {
   text = String(text || "").trim();
   if (!text || chatCtl || coachDisabled) return;
   const sample = await getSample();
-  if (!sample) { coachDisabled = true; $("#coach-note").innerHTML = aiOnlyHTML(); paintChat(); return; }
+  if (!sample) {
+    // App version: hand the message to Claude directly, with this week's data
+    const recent = sorted(recentIn(null, 14)).slice(0, 40).map((e) => `${e.date} [${e.area}] ${e.title}${entryMeta(e) ? " - " + entryMeta(e) : ""}`).join("\n") || "none yet";
+    const prompt = `I use my personal life-tracking app (gym, study, work, health, mood, goals). Today is ${new Date().toLocaleDateString("en-US", { weekday: "long" })}, ${today()}.
+My stats this week: ${JSON.stringify(stats(7))}
+Open goals: ${state.goals.filter((g) => !g.done).map((g) => g.text).join("; ") || "none"}
+What I logged in the last 14 days:
+${recent}
+
+My message: ${text}
+
+Reply like a supportive personal coach: short, specific and practical.`;
+    chat.push({ role: "user", text, notes: [] });
+    chat.push({ role: "assistant", text: "", notes: [], html: claudeLinkHTML(prompt, "Your message and this week's data are ready for Claude.") + `<p class="muted" style="font-size:12px;margin-top:6px">To save things you did, use the forms in each app (Gym, Study…).</p>` });
+    paintChat(); return;
+  }
 
   const history = chat.filter((m) => !m.err && m.text).slice(-16).map((m) => ({ role: m.role, content: m.text }));
   chat.push({ role: "user", text, notes: [] });
@@ -1389,15 +1405,10 @@ views.reports = {
 async function writeReport() {
   if (rep.ctl) return;
   const out = $("#rep-ai"); if (!out) return;
-  const sample = await getSample();
   out.hidden = false;
-  if (!sample) { out.innerHTML = aiOnlyHTML(); return; }
   const period = rep.period, r = periodRange(period, rep.offset), key = period + ":" + r.start;
   const st = periodStats(r), pv = periodStats(periodRange(period, rep.offset - 1));
   const notes = sorted(state.entries.filter((x) => x.date >= r.start && x.date <= r.end && x.details)).slice(0, 40).map((x) => `${x.date} [${x.area}] ${x.title}: ${x.details}`).join("\n");
-  const ctl = new AbortController(); rep.ctl = ctl;
-  out.classList.add("thinking"); out.textContent = "Writing your report…";
-  $("[data-rep-stop]").hidden = false; $("[data-rep-ai]").disabled = true;
   const prompt = `Write the user's personal ${PERIOD_NOUN[period]}ly life report for ${periodLabel(period, rep.offset, r)} (${r.start} to ${r.end}). Today is ${today()}.
 This period's numbers: ${JSON.stringify(st)}
 Previous ${PERIOD_NOUN[period]} for comparison: ${JSON.stringify(pv)}
@@ -1415,6 +1426,11 @@ Needs attention:
 Focus for next ${PERIOD_NOUN[period]}:
 - 3 concrete, specific actions
 Plain text, bullets start with "- ", under 250 words. If almost nothing was logged, say so kindly and focus on how to start tracking.`;
+  const sample = await getSample();
+  if (!sample) { out.innerHTML = claudeLinkHTML(prompt.replace("Write the user's", "Write my"), `Your ${PERIOD_NOUN[period]}ly numbers are ready for Claude.`); return; }
+  const ctl = new AbortController(); rep.ctl = ctl;
+  out.classList.add("thinking"); out.textContent = "Writing your report…";
+  $("[data-rep-stop]").hidden = false; $("[data-rep-ai]").disabled = true;
   const live = () => rep.ctl === ctl && $("#rep-ai") === out;
   try {
     const res = await sample(prompt, { signal: ctl.signal, onText: ({ text }) => { if (live()) { out.classList.remove("thinking"); out.innerHTML = mdLite(text); } } });
@@ -1913,14 +1929,21 @@ $("#main").addEventListener("change", async (ev) => {
 // ---------- Quick links ----------
 const yt = (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
 const sp = (q) => "https://open.spotify.com/search/" + encodeURIComponent(q);
-const CLAUDE = { name: "Claude", url: "https://claude.ai/new" };
+// Claude links open a new chat with the question already typed in (claude.ai/new?q=...)
+const claudeURL = (prompt) => "https://claude.ai/new?q=" + encodeURIComponent(String(prompt || "").slice(0, 6000));
+const claudeQ = (note, prompt) => ({ name: "Claude", note, url: claudeURL(prompt), prompt });
 const DEFAULT_LINKS = {
-  gym: [{ name: "YouTube", url: yt("gym workout"), note: "Workout videos" }, { name: "Spotify", url: sp("workout"), note: "Workout music" }, { ...CLAUDE, note: "Make a training plan" }],
-  study: [{ ...CLAUDE, note: "Ask & learn" }, { name: "YouTube", url: yt("study with me pomodoro"), note: "Study with me" }, { name: "Spotify", url: sp("deep focus"), note: "Focus music" }, { name: "Google Docs", url: "https://docs.google.com/", note: "Notes" }],
-  work: [{ name: "Gmail", url: "https://mail.google.com/", note: "Email" }, { name: "Google Calendar", url: "https://calendar.google.com/", note: "Schedule" }, { ...CLAUDE, note: "Write & plan" }, { name: "LinkedIn", url: "https://www.linkedin.com/", note: "Network" }],
-  health: [{ name: "YouTube", url: yt("stretching routine"), note: "Stretching" }, { name: "Spotify", url: sp("sleep"), note: "Sleep sounds" }],
-  mood: [{ name: "Spotify", url: sp("mood booster"), note: "Mood booster" }, { name: "YouTube", url: yt("10 minute guided meditation"), note: "Meditation" }, { ...CLAUDE, note: "Talk it through" }],
-  goals: [{ ...CLAUDE, note: "Plan your goals" }, { name: "Google Calendar", url: "https://calendar.google.com/", note: "Block the time" }],
+  gym: [{ name: "YouTube", url: yt("gym workout"), note: "Workout videos" }, { name: "Spotify", url: sp("workout"), note: "Workout music" },
+    claudeQ("Make a training plan", "I'm a beginner at the gym. Ask me 3 short questions about my goal, how many days I can train and my equipment. Then make me a simple weekly plan with exercises, sets, reps and rest times, and explain how to do each exercise safely.")],
+  study: [claudeQ("Ask & learn", "Be my study tutor. First ask me what subject and topic I'm studying. Then explain it simply with examples, and quiz me with 5 questions at the end."),
+    { name: "YouTube", url: yt("study with me pomodoro"), note: "Study with me" }, { name: "Spotify", url: sp("deep focus"), note: "Focus music" }, { name: "Google Docs", url: "https://docs.google.com/", note: "Notes" }],
+  work: [{ name: "Gmail", url: "https://mail.google.com/", note: "Email" }, { name: "Google Calendar", url: "https://calendar.google.com/", note: "Schedule" },
+    claudeQ("Plan my workday", "Help me plan my workday. Ask me what tasks I have and my deadlines, then put them in priority order with a simple time plan for today."), { name: "LinkedIn", url: "https://www.linkedin.com/", note: "Network" }],
+  health: [{ name: "YouTube", url: yt("stretching routine"), note: "Stretching" }, { name: "Spotify", url: sp("sleep"), note: "Sleep sounds" },
+    claudeQ("Sleep & health tips", "Give me practical tips to sleep better and build healthy daily habits (water, movement, screen time). Ask me first how many hours I sleep and what time I go to bed.")],
+  mood: [{ name: "Spotify", url: sp("mood booster"), note: "Mood booster" }, { name: "YouTube", url: yt("10 minute guided meditation"), note: "Meditation" },
+    claudeQ("Talk it through", "I want to talk about how I'm feeling today. Ask me a few gentle questions, listen, and suggest one small thing that could help me feel better.")],
+  goals: [claudeQ("Plan your goals", "Help me turn my goal into small weekly steps I can actually do. Ask me what my goal is and my deadline first."), { name: "Google Calendar", url: "https://calendar.google.com/", note: "Block the time" }],
   reminders: [{ name: "Google Calendar", url: "https://calendar.google.com/", note: "Your phone alerts" }],
 };
 const BRAND = { YouTube: "#D3201B", Spotify: "#1A9E4A", Claude: "#C2603F", Gmail: "#C5372C", "Google Calendar": "#3367D6", "Google Docs": "#3367D6", LinkedIn: "#0A66C2" };
@@ -1943,7 +1966,7 @@ function paintLinks() {
   const all = [...(DEFAULT_LINKS[current] || []), ...state.links.filter((l) => l.area === current)];
   grid.innerHTML = all.map((l) => {
     const custom = !!l.id;
-    return `<div class="qlink-wrap"><a class="qlink ${custom ? "custom" : ""}" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="qbadge" style="--b:${esc(BRAND[l.name] || "var(--c)")}">${esc(String(l.name || "?").trim().charAt(0).toUpperCase())}</span><span><b>${esc(l.name)}</b><small>${esc(l.note || hostOf(l.url))}</small></span></a>${custom ? `<button class="del qdel" data-link-del="${esc(l.id)}" aria-label="Remove ${esc(l.name)}">Delete</button>` : ""}</div>`;
+    return `<div class="qlink-wrap"><a class="qlink ${custom ? "custom" : ""}" href="${esc(l.url)}" target="_blank" rel="noopener" ${l.prompt ? `data-claude-copy="${claudePromptId(l.prompt)}"` : ""}><span class="qbadge" style="--b:${esc(BRAND[l.name] || "var(--c)")}">${esc(String(l.name || "?").trim().charAt(0).toUpperCase())}</span><span><b>${esc(l.name)}</b><small>${esc(l.note || hostOf(l.url))}</small></span></a>${custom ? `<button class="del qdel" data-link-del="${esc(l.id)}" aria-label="Remove ${esc(l.name)}">Delete</button>` : ""}</div>`;
   }).join("");
 }
 // ---------- AI helper (one per section) ----------
@@ -1975,16 +1998,25 @@ function mountAI(area) {
   if ($("#link-grid") && stack.firstElementChild) stack.firstElementChild.insertAdjacentHTML("afterend", html);
   else stack.insertAdjacentHTML("afterbegin", html);
 }
+// "Ask Claude" button: opens a Claude chat with the prompt typed in, and copies it as a backup
+const claudePrompts = [];
+const claudePromptId = (p) => { p = String(p); let i = claudePrompts.indexOf(p); if (i < 0) { if (claudePrompts.length > 200) claudePrompts.splice(0, 100); claudePrompts.push(p); i = claudePrompts.length - 1; } return i; };
+function claudeLinkHTML(prompt, what) {
+  return `<p style="margin:0 0 10px">${esc(what)}</p><a class="btn neutral" style="display:inline-block;text-decoration:none" href="${esc(claudeURL(prompt))}" target="_blank" rel="noopener" data-claude-copy="${claudePromptId(prompt)}">Ask Claude →</a>
+    <p class="muted" style="font-size:12px;margin-top:8px">Opens Claude with your question and your data already filled in. If the box is empty, just paste: it's copied for you.</p>`;
+}
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest("[data-claude-copy]"); if (!a) return;
+  const p = claudePrompts[Number(a.dataset.claudeCopy)];
+  if (p && navigator.clipboard) navigator.clipboard.writeText(p).catch(() => {});
+});
+
 async function askAI(q) {
   q = String(q || "").trim();
   const out = $("#ai-out"); if (!q || !out) return;
   if (aiCtl) aiCtl.abort();
   out.hidden = false;
-  const sample = await getSample();
-  if (!sample) { out.innerHTML = aiOnlyHTML(); return; }
-  const area = current, ctl = new AbortController(); aiCtl = ctl;
-  out.classList.add("thinking"); out.textContent = "Thinking…";
-  $("#ai-stop").hidden = false; $("#ai-send").disabled = true;
+  const area = current;
   const prompt = `You are the AI helper inside the ${AREA_LABEL[area] || "Reminders"} section of the user's personal life app (gym, study, work, health, mood, goals, reminders). Today is ${new Date().toLocaleDateString("en-US", { weekday: "long" })}, ${today()}.
 
 The user's data for this section:
@@ -1993,6 +2025,11 @@ ${areaContext(area)}
 The user asks: ${q}
 
 Answer directly and practically. Use their real data where it matters and never invent past data; if there is little data, say so in one line and still help. Plain text only; for lists use lines starting with "- ". Keep it under 200 words unless they ask for a plan or a quiz. Reply in the language the user writes in.${area === "study" ? " For a quiz: 5 short questions on the subjects they studied, then the answers at the end under 'Answers:'." : ""}${area === "gym" ? " For a workout: exercises with sets × reps and a suggested weight based on their records." : ""}`;
+  const sample = await getSample();
+  if (!sample) { out.classList.remove("thinking"); out.innerHTML = claudeLinkHTML(prompt, `Ask Claude: “${q}”`); return; }
+  const ctl = new AbortController(); aiCtl = ctl;
+  out.classList.add("thinking"); out.textContent = "Thinking…";
+  $("#ai-stop").hidden = false; $("#ai-send").disabled = true;
   const live = () => aiCtl === ctl && $("#ai-out") === out;
   try {
     const res = await sample(prompt, { signal: ctl.signal, onText: ({ text }) => { if (live()) { out.classList.remove("thinking"); out.innerHTML = mdLite(text); } } });

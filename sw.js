@@ -1,5 +1,5 @@
 // Life Agent offline worker. The version changes with every build so phones pick up updates.
-const CACHE = "life-agent-c396d5e2";
+const CACHE = "life-agent-81acf875";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./exlib.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png", "./favicon-64.png", "./widget.html"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => {
