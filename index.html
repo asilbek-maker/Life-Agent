@@ -2038,6 +2038,7 @@ function paintAppCard() {
     : IS_IOS ? `<ol class="steps"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button <span aria-hidden="true">(square with an arrow ⬆️)</span> at the bottom.</li><li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>`
     : `<ol class="steps"><li>In <b>Chrome</b>, tap the <b>⋮</b> menu.</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li></ol>`;
   el.innerHTML = `<div class="card-head"><h2>${IS_STANDALONE ? "Your data" : "Install Life Agent on your phone"}</h2></div>${install}
+    ${IS_IOS || !installEvt ? `<p style="font-size:14px"><a class="cal" href="widget.html">📱 Add a Life Agent widget to your Smart Stack →</a></p>` : ""}
     <p class="muted" style="font-size:13px">This app saves your data on this device. Make a backup now and then so you never lose it.</p>
     <div class="btns"><button type="button" class="btn ghost" data-app="export">Back up data</button><label class="btn ghost" for="app-import" style="display:inline-block">Restore backup<input type="file" id="app-import" accept="application/json,.json" hidden></label></div>`;
 }

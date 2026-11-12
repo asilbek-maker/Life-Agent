@@ -14,6 +14,11 @@ A personal life-tracking app with an AI coach. It tracks gym workouts, study ses
 - **AI Coach:** tell it what you did in plain words ("bench 60kg 4x8, studied math 2h") and it saves each item to the right section. Each section also has its own AI helper.
 - **Phone-friendly:** a bottom tab bar, large touch targets, and it can be added to the iPhone home screen.
 
+## Install on your phone
+
+- **App:** open https://asilbek-maker.github.io/Life-Agent/ in Safari (iPhone) or Chrome (Android) and add it to your home screen.
+- **Smart Stack widget (iPhone):** open https://asilbek-maker.github.io/Life-Agent/widget.html and follow the steps. It uses the free Scriptable app, and the script is in `widget/LifeAgentWidget.js`.
+
 ## How it runs
 
 The app is a single page, `index.html`, published as a claude.ai artifact.

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Life Agent Widget</title>
+<meta name="theme-color" content="#1E2850"><link rel="icon" type="image/png" href="favicon-64.png"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root { --bg: #F2F3F7; --surface: #FFFFFF; --ink: #151924; --muted: #5A6172; --line: #D8DBE4; --accent: #24305E; --accent-ink: #FFFFFF; --ok: #178A5C; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0E1117; --surface: #171B24; --ink: #E8EAF0; --muted: #9AA1B2; --line: #2B3142; --accent: #A9B8F5; --accent-ink: #0E1117; --ok: #45C98F; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 48px max(16px, env(safe-area-inset-left)); display: grid; gap: 16px; }
+h1 { font-size: 1.7rem; margin: 0; line-height: 1.15; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: grid; gap: 10px; }
+ol { margin: 0; padding-left: 22px; display: grid; gap: 10px; }
+.muted { color: var(--muted); font-size: 14px; margin: 0; }
+.btn { appearance: none; border: 0; border-radius: 12px; padding: 14px 18px; font: inherit; font-weight: 700; background: var(--accent); color: var(--accent-ink); cursor: pointer; text-align: center; text-decoration: none; display: block; }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.ok { color: var(--ok); font-weight: 600; font-size: 14px; min-height: 1.4em; margin: 0; }
+pre { margin: 0; max-height: 220px; overflow: auto; font-size: 11px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; white-space: pre; }
+a { color: var(--accent); }
+.back { font-size: 14px; }
+</style></head><body><main>
+<a class="back" href="./">← Back to Life Agent</a>
+<h1>Add Life Agent to your Smart Stack</h1>
+<p class="muted">iPhone widgets need an app from the App Store. The free app <b>Scriptable</b> runs this small widget for you. It takes about 2 minutes.</p>
+<div class="card">
+<ol>
+<li><b>Install Scriptable</b> (free): <a href="https://scriptable.app" target="_blank" rel="noopener">scriptable.app</a> → App Store → Get.</li>
+<li><b>Copy the widget code:</b><button class="btn" id="copy" type="button" style="margin-top:8px;width:100%">Copy widget code</button><p class="ok" id="msg" aria-live="polite"></p></li>
+<li>Open <b>Scriptable</b> → tap <b>+</b> (top right) → tap the empty page → <b>Paste</b>.</li>
+<li>Tap the name at the top (“Untitled Script”) and rename it to <b>Life Agent</b>. Tap <b>▶</b> once to see a preview. If it asks for Calendar access, tap <b>Allow</b>. Then tap <b>Done</b>.</li>
+<li>Go to your home screen. <b>Press and hold your Smart Stack</b> → <b>Edit Stack</b> → <b>+</b> → choose <b>Scriptable</b> → swipe to the <b>medium</b> size → <b>Add Widget</b>.</li>
+<li><b>Press and hold</b> the new widget → <b>Edit Widget</b> → <b>Script</b> → choose <b>Life Agent</b>. Tap outside to finish.</li>
+</ol>
+</div>
+<div class="card">
+<p class="muted"><b>What it shows:</b> today's date, your next calendar events (add Life Agent reminders to Google Calendar to see them here), and Gym, Study, Reminders and Reports buttons. Tapping opens Life Agent in Safari.</p>
+</div>
+<div class="card">
+<p class="muted">If the Copy button doesn't work, press and hold inside the box below → <b>Select All</b> → <b>Copy</b>.</p>
+<pre id="code">// Life Agent widget for Scriptable (free on the App Store: https://scriptable.app)
+// Shows today&#x27;s date, your next calendar events and buttons that open Life Agent.
+// Works in small, medium and large widgets, and inside a Smart Stack.
+
+const APP = &quot;https://asilbek-maker.github.io/Life-Agent/&quot;;
+
+const C = {
+  bg1: new Color(&quot;#1E2850&quot;),
+  bg2: new Color(&quot;#2B3A70&quot;),
+  text: Color.white(),
+  dim: new Color(&quot;#FFFFFF&quot;, 0.7),
+  chip: new Color(&quot;#FFFFFF&quot;, 0.12),
+  gym: new Color(&quot;#FF7A5C&quot;),
+  study: new Color(&quot;#6F9BFF&quot;),
+  goals: new Color(&quot;#F27AB0&quot;),
+  health: new Color(&quot;#45C98F&quot;),
+};
+
+// [label, SF Symbol, color, section]
+const LINKS = [
+  [&quot;Gym&quot;, &quot;dumbbell.fill&quot;, C.gym, &quot;#gym&quot;],
+  [&quot;Study&quot;, &quot;book.fill&quot;, C.study, &quot;#study&quot;],
+  [&quot;Reminders&quot;, &quot;bell.fill&quot;, C.goals, &quot;#reminders&quot;],
+  [&quot;Reports&quot;, &quot;chart.bar.fill&quot;, C.health, &quot;#reports&quot;],
+];
+
+function symbol(name) {
+  const s = SFSymbol.named(name) || SFSymbol.named(&quot;circle.fill&quot;);
+  return s.image;
+}
+
+function time(d) {
+  const f = new DateFormatter();
+  f.useNoDateStyle();
+  f.useShortTimeStyle();
+  return f.string(d);
+}
+
+// Next events from the iPhone calendar (this includes Google Calendar if it&#x27;s
+// added in Settings &gt; Calendar &gt; Accounts). Asks for permission the first time.
+async function nextEvents(count) {
+  try {
+    const now = new Date();
+    const events = await CalendarEvent.today([]);
+    return events
+      .filter((e) =&gt; !e.isAllDay &amp;&amp; e.endDate &gt; now)
+      .sort((a, b) =&gt; a.startDate - b.startDate)
+      .slice(0, count);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function build() {
+  const family = config.widgetFamily || &quot;medium&quot;;
+  const small = family === &quot;small&quot;;
+  const w = new ListWidget();
+  const g = new LinearGradient();
+  g.colors = [C.bg1, C.bg2];
+  g.locations = [0, 1];
+  w.backgroundGradient = g;
+  w.setPadding(14, 14, 14, 14);
+  w.url = APP + &quot;#home&quot;;
+  w.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
+
+  // Header: name and date
+  const head = w.addStack();
+  head.centerAlignContent();
+  const title = head.addText(&quot;Life Agent&quot;);
+  title.font = Font.boldSystemFont(small ? 14 : 16);
+  title.textColor = C.text;
+  head.addSpacer();
+  const df = new DateFormatter();
+  df.dateFormat = small ? &quot;EEE d&quot; : &quot;EEEE, d MMM&quot;;
+  const date = head.addText(df.string(new Date()));
+  date.font = Font.mediumSystemFont(12);
+  date.textColor = C.dim;
+
+  w.addSpacer(8);
+
+  const events = await nextEvents(family === &quot;large&quot; ? 5 : 2);
+
+  if (small) {
+    const e = events[0];
+    const line = w.addText(e ? `${time(e.startDate)}  ${e.title}` : &quot;Tap to log your day&quot;);
+    line.font = Font.semiboldSystemFont(13);
+    line.textColor = C.text;
+    line.lineLimit = 3;
+    w.addSpacer();
+    const row = w.addStack();
+    for (const [, sym, color] of LINKS) {
+      const img = row.addImage(symbol(sym));
+      img.imageSize = new Size(18, 18);
+      img.tintColor = color;
+      row.addSpacer(10);
+    }
+    return w;
+  }
+
+  if (events.length) {
+    for (const e of events) {
+      const r = w.addText(`${time(e.startDate)}   ${e.title}`);
+      r.font = Font.mediumSystemFont(13);
+      r.textColor = C.text;
+      r.lineLimit = 1;
+      w.addSpacer(2);
+    }
+  } else {
+    const r = w.addText(&quot;Nothing planned right now. Tap a button to start.&quot;);
+    r.font = Font.mediumSystemFont(13);
+    r.textColor = C.dim;
+    r.lineLimit = 2;
+  }
+
+  w.addSpacer();
+
+  // Buttons (medium and large widgets can have several tap targets)
+  const row = w.addStack();
+  row.spacing = 8;
+  for (const [label, sym, color, hash] of LINKS) {
+    const b = row.addStack();
+    b.layoutVertically();
+    b.centerAlignContent();
+    b.backgroundColor = C.chip;
+    b.cornerRadius = 12;
+    b.setPadding(8, 6, 8, 6);
+    b.size = new Size(0, 52);
+    b.url = APP + hash;
+    const top = b.addStack();
+    top.addSpacer();
+    const img = top.addImage(symbol(sym));
+    img.imageSize = new Size(18, 18);
+    img.tintColor = color;
+    top.addSpacer();
+    b.addSpacer(4);
+    const lr = b.addStack();
+    lr.addSpacer();
+    const l = lr.addText(label);
+    l.font = Font.semiboldSystemFont(11);
+    l.textColor = C.text;
+    l.lineLimit = 1;
+    l.minimumScaleFactor = 0.7;
+    lr.addSpacer();
+  }
+  return w;
+}
+
+const widget = await build();
+if (config.runsInWidget) {
+  Script.setWidget(widget);
+} else {
+  await widget.presentMedium();
+}
+Script.complete();
+</pre>
+</div>
+</main>
+<script>
+document.getElementById("copy").addEventListener("click", async () => {
+  const msg = document.getElementById("msg"), text = document.getElementById("code").textContent;
+  try { await navigator.clipboard.writeText(text); msg.textContent = "✓ Copied! Now open Scriptable."; }
+  catch (e) { const r = document.createRange(); r.selectNodeContents(document.getElementById("code")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.textContent = "Selected. Tap Copy in the menu."; }
+});
+</script>
+</body></html>
