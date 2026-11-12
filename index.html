@@ -1,0 +1,2071 @@
+<title>Life Agent</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: sticky header with app tabs; each life area is its own mini-app (form left, numbers + history right); Coach is a chat agent that writes into every app. */
+:root {
+  --bg: #F2F3F7; --surface: #FFFFFF; --surface-2: #E8EAF1; --ink: #151924; --muted: #5A6172; --line: #D8DBE4;
+  --accent: #24305E; --accent-ink: #FFFFFF; --danger: #B42318;
+  --gym: #D9482B; --study: #2F66D6; --work: #7B4FE0; --health: #178A5C; --mood: #B87D06; --goals: #C93F7E; --other: #6B7280;
+  --font-display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0E1117; --surface: #171B24; --surface-2: #212735; --ink: #E8EAF0; --muted: #9AA1B2; --line: #2B3142;
+  --accent: #A9B8F5; --accent-ink: #0E1117; --danger: #FF8A7A;
+  --gym: #FF7A5C; --study: #6F9BFF; --work: #A98BFF; --health: #45C98F; --mood: #F2BE45; --goals: #F27AB0; --other: #9CA3AF;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0E1117; --surface: #171B24; --surface-2: #212735; --ink: #E8EAF0; --muted: #9AA1B2; --line: #2B3142;
+  --accent: #A9B8F5; --accent-ink: #0E1117; --danger: #FF8A7A;
+  --gym: #FF7A5C; --study: #6F9BFF; --work: #A98BFF; --health: #45C98F; --mood: #F2BE45; --goals: #F27AB0; --other: #9CA3AF;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(1.8rem, 4vw, 2.5rem); font-weight: 800; line-height: 1.1; }
+h2 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 12px 4px; }
+.brand { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 22px; height: 22px; border-radius: 6px; background: conic-gradient(var(--gym) 0 60deg, var(--study) 0 120deg, var(--work) 0 180deg, var(--health) 0 240deg, var(--mood) 0 300deg, var(--goals) 0); }
+.sync { font-size: 12px; color: var(--muted); text-align: right; }
+.tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-block: 6px 10px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: none; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 14px; }
+.tab:hover { background: var(--surface-2); color: var(--ink); }
+.tab .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--accent)); }
+.tab[aria-current="page"] { background: var(--ink); color: var(--bg); }
+.tab[aria-current="page"] .dot { background: var(--c, var(--bg)); }
+
+.a-gym { --c: var(--gym); } .a-study { --c: var(--study); } .a-work { --c: var(--work); }
+.a-health { --c: var(--health); } .a-mood { --c: var(--mood); } .a-goals { --c: var(--goals); }
+.a-other { --c: var(--other); } .a-coach { --c: var(--accent); } .a-reminders { --c: var(--accent); }
+.a-reminders .btn { color: var(--accent-ink); }
+.rem-when { font-family: var(--font-mono); font-size: 13px; white-space: nowrap; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.rem-when.due { color: var(--accent); font-weight: 500; }
+.cal { font-size: 13px; color: var(--accent); font-weight: 600; text-decoration: none; }
+.cal:hover { text-decoration: underline; }
+.rem-actions { display: grid; justify-items: end; gap: 2px; }
+
+main { padding-block: 24px 64px; display: grid; gap: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.area-head { display: grid; gap: 6px; }
+.area-head h1 { color: var(--c, var(--ink)); }
+.area-head p { color: var(--muted); max-width: 60ch; }
+.cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+.stack { display: grid; gap: 20px; min-width: 0; }
+@media (max-width: 760px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* Forms */
+.form { border-top: 4px solid var(--c, var(--accent)); }
+label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; color: var(--muted); min-width: 0; }
+input, select, textarea { width: 100%; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 16px; font-weight: 400; }
+input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }
+input:focus, select:focus, textarea:focus { border-color: var(--c, var(--accent)); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--accent)) 22%, transparent); }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px; }
+.btn { appearance: none; border: 0; border-radius: 10px; padding: 11px 16px; font-weight: 600; cursor: pointer; background: var(--c, var(--accent)); color: #fff; }
+.a-coach .btn, .btn.neutral { background: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: var(--surface-2); color: var(--ink); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn:hover:not(:disabled) { filter: brightness(1.08); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Mood picker */
+.moods { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.moods input { position: absolute; opacity: 0; pointer-events: none; }
+.moods label { display: grid; justify-items: center; gap: 2px; padding: 10px 2px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; color: var(--ink); background: var(--bg); text-align: center; }
+.moods label b { font-family: var(--font-mono); font-size: 1.3rem; }
+.moods label span { font-size: 11px; color: var(--muted); font-weight: 500; }
+.moods input:checked + label { border-color: var(--mood); background: color-mix(in srgb, var(--mood) 16%, var(--bg)); }
+.moods input:focus-visible + label { outline: 2px solid var(--accent); }
+
+/* Timer */
+.pomo { --pc: var(--study); display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: color-mix(in srgb, var(--pc) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--pc) 30%, transparent); }
+.pomo[data-phase="break"] { --pc: var(--health); }
+.pomo-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.pomo-phase { font-weight: 700; color: var(--pc); }
+.pomo-time { font-size: clamp(2.6rem, 9vw, 3.4rem); font-weight: 500; color: var(--pc); line-height: 1; }
+.pomo .track { height: 8px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+.pomo .fill { display: block; height: 100%; width: 0; background: var(--pc); border-radius: 6px; transition: width .4s linear; }
+.pomo .btn:not(.ghost) { background: var(--pc); }
+@media (prefers-reduced-motion: reduce) { .pomo .fill { transition: none; } }
+
+/* Home */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: end; }
+@media (max-width: 760px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.quick { display: flex; gap: 8px; }
+.quick input { flex: 1; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.tile { display: grid; gap: 2px; padding: 14px 16px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line); text-decoration: none; color: var(--ink); position: relative; overflow: hidden; }
+.tile::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--c); }
+.tile:hover { border-color: var(--c); }
+.tile .lbl { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+.tile .big { font-family: var(--font-mono); font-size: 1.9rem; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.tile .big small { font-family: var(--font-body); font-size: 13px; color: var(--muted); margin-left: 4px; }
+.tile .sub { font-size: 12px; color: var(--muted); }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .two { grid-template-columns: minmax(0, 1fr); } }
+
+/* Week grid */
+.week { display: grid; grid-template-columns: 64px repeat(7, minmax(0, 1fr)); gap: 6px; align-items: center; font-size: 12px; }
+.week .dname { text-align: center; color: var(--muted); font-weight: 600; }
+.week .dname.today { color: var(--ink); }
+.week .rname { color: var(--muted); font-weight: 600; }
+.week .cell { height: 22px; border-radius: 6px; background: var(--surface-2); }
+.week .cell.on { background: var(--c); }
+
+/* Lists */
+.list { display: grid; gap: 0; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.item:first-child { border-top: 0; }
+.item .date { font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding-top: 2px; white-space: nowrap; }
+.item .what { min-width: 0; overflow-wrap: anywhere; }
+.item .what b { font-weight: 600; }
+.item .what .meta { font-size: 13px; color: var(--muted); }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--c); margin-right: 6px; }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
+.pill.done { background: color-mix(in srgb, var(--health) 18%, transparent); color: var(--health); }
+.pill.blocked { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.del { appearance: none; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 6px; white-space: nowrap; }
+.del:hover { color: var(--danger); }
+.del.armed { color: var(--danger); font-weight: 600; }
+.empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+
+/* Bars */
+.bars { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: minmax(70px, 120px) minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 13px; }
+.bar .track { height: 10px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+.bar .fill { height: 100%; border-radius: 6px; background: var(--c); }
+.bar .v { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.bar .k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.stat { display: grid; gap: 0; }
+.stat .big { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--c); }
+.stat .sub { font-size: 12px; color: var(--muted); }
+
+/* Goals */
+.goal { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.goal:first-child { border-top: 0; }
+.goal input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--goals); }
+.goal.done .gtext { text-decoration: line-through; color: var(--muted); }
+
+/* Quick links */
+.link-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.qlink-wrap { position: relative; min-width: 0; }
+.qlink { display: flex; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; text-decoration: none; color: var(--ink); background: var(--bg); min-width: 0; height: 100%; }
+.qlink.custom { padding-right: 58px; }
+.qlink:hover { border-color: var(--c); }
+.qbadge { flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 14px; background: var(--b); }
+.qlink > span:last-child { min-width: 0; }
+.qlink b { display: block; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qlink small { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qdel { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); font-size: 11px; }
+.link-form { display: grid; gap: 10px; }
+.linkbtn { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; }
+
+/* Gym plan & guided workout */
+#plan-card { border-top: 4px solid var(--gym); }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+.plan-title { font-size: 1.5rem; margin-top: 2px; }
+.plan-list { display: grid; }
+.plan-ex { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+.plan-ex:first-child { border-top: 0; }
+.plan-ex small { grid-column: 1 / -1; font-size: 12px; }
+.ses-ex { display: grid; gap: 8px; padding: 14px 0; border-top: 1px solid var(--line); }
+.ses-head { display: grid; gap: 1px; }
+.ses-head small { font-size: 12px; }
+.why { color: var(--c); font-size: 12px; font-weight: 600; }
+.sets { display: grid; gap: 6px; }
+.set-labels, .set { display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) 58px; gap: 6px; align-items: center; }
+.set-labels { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.set input { padding: 8px 10px; }
+.set.done input { opacity: .6; }
+.tick { appearance: none; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 9px 0; font-weight: 600; cursor: pointer; color: var(--ink); }
+.set.done .tick { background: var(--gym); border-color: var(--gym); color: #fff; }
+.rest { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(520px, calc(100% - 32px)); z-index: 7; padding: 10px 12px 10px 16px; border-radius: 16px; background: var(--ink); color: var(--bg); font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+.rest .num { font-size: 1.6rem; }
+.rest small { display: block; font-size: 12px; opacity: .75; font-weight: 500; }
+.rest-btns { display: flex; gap: 6px; }
+.rest button { appearance: none; border: 0; border-radius: 10px; padding: 10px 10px; min-width: 44px; background: color-mix(in srgb, var(--bg) 18%, transparent); color: var(--bg); cursor: pointer; font-weight: 700; font-size: 13px; }
+.rest button.go { background: var(--gym); color: #FFFFFF; }
+.ses-bar { height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.ses-bar span { display: block; height: 100%; background: var(--gym); border-radius: 4px; transition: width .3s; }
+.stp { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); min-width: 0; height: 44px; }
+.stp input { border: 0; border-radius: 0; text-align: center; padding: 0 2px; min-width: 0; flex: 1; background: transparent; box-shadow: none !important; font-family: var(--font-mono); font-size: 16px; }
+.stp button { appearance: none; border: 0; background: var(--surface-2); width: 34px; flex: none; font-size: 20px; font-weight: 500; color: var(--ink); cursor: pointer; line-height: 1; }
+.stp button:active { background: var(--line); }
+.set.done .stp { opacity: .55; }
+.tick { min-height: 44px; }
+
+/* Exercise demos */
+.howto { grid-column: 1 / -1; }
+.howto summary { cursor: pointer; color: var(--c, var(--gym)); font-size: 13px; font-weight: 600; list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; }
+.howto summary::-webkit-details-marker { display: none; }
+.howto summary::before { content: "▶"; font-size: 9px; transition: transform .15s; }
+.howto[open] summary::before { transform: rotate(90deg); }
+.demo { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: start; padding: 10px 0 4px; }
+@media (max-width: 440px) { .demo { grid-template-columns: 112px minmax(0, 1fr); gap: 10px; } }
+.fig { background: var(--surface-2); border-radius: 12px; aspect-ratio: 1; max-width: 100%; overflow: hidden; }
+.fig svg { width: 100%; height: 100%; display: block; }
+.fig .body { stroke: var(--ink); stroke-width: 5.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.fig .far { stroke: var(--muted); opacity: .55; }
+.fig .head { fill: var(--ink); }
+.fig .prop { stroke: var(--muted); stroke-width: 3; stroke-linecap: round; opacity: .7; }
+.fig .ground { stroke: var(--line); stroke-width: 2; }
+.fig .eq { fill: var(--gym); }
+.fig .cable { stroke: var(--muted); stroke-width: 1.5; }
+.demo-info { display: grid; gap: 8px; min-width: 0; font-size: 13px; }
+.steps { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+.mpill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--gym) 16%, transparent); color: var(--gym); }
+
+.demo.photo { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); }
+@media (max-width: 680px) { .demo.photo { grid-template-columns: minmax(0, 1fr); } }
+.ph { position: relative; aspect-ratio: 3 / 2; border-radius: 12px; overflow: hidden; background: #FFFFFF; border: 1px solid var(--line); }
+.ph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; max-width: none; }
+.ph img.b, .phl.b { animation: xfb 3.4s ease-in-out infinite; }
+.phl.a { animation: xfa 3.4s ease-in-out infinite; }
+@keyframes xfb { 0%, 40% { opacity: 0; } 50%, 90% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes xfa { 0%, 40% { opacity: 1; } 50%, 90% { opacity: 0; } 100% { opacity: 1; } }
+.phl { position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(20, 22, 30, .75); color: #FFFFFF; }
+@media (prefers-reduced-motion: reduce) { .ph img.b, .phl.a, .phl.b { animation: none; } .ph img.b { opacity: 0; } .phl.b { display: none; } }
+.steps li { line-height: 1.5; }
+.lvl { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--health) 16%, transparent); color: var(--health); }
+.lib-list { display: grid; }
+.lib-ex { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: center; }
+.lib-ex:first-child { border-top: 0; }
+.lib-ex .thumb { width: 64px; height: 44px; object-fit: cover; border-radius: 8px; background: #FFFFFF; border: 1px solid var(--line); }
+.lib-ex small { display: block; font-size: 12px; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--gym); border-color: var(--gym); color: #FFFFFF; }
+
+/* Reports */
+.rep-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { appearance: none; border: 0; background: none; padding: 7px 14px; border-radius: 8px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+.rep-nav { display: flex; align-items: center; gap: 8px; }
+.rep-nav b { font-family: var(--font-display); font-size: 1.05rem; min-width: 0; text-align: center; }
+.navbtn { appearance: none; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; color: var(--ink); font-size: 18px; line-height: 1; flex: none; }
+.navbtn:disabled { opacity: .4; cursor: default; }
+div.tile:hover { border-color: var(--line); }
+.delta { font-size: 12px; font-weight: 600; color: var(--muted); }
+.delta.up { color: var(--health); } .delta.down { color: var(--danger); }
+.chart { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; align-items: end; height: 170px; border-bottom: 1px solid var(--line); }
+.col { display: flex; flex-direction: column-reverse; height: 100%; min-width: 0; }
+.col span { display: block; width: 100%; }
+.col span:last-child { border-radius: 4px 4px 0 0; }
+.xl { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; font-size: 10px; color: var(--muted); text-align: center; font-family: var(--font-mono); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 5px; vertical-align: -1px; }
+.hl { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.hl li { padding-left: 16px; position: relative; overflow-wrap: anywhere; }
+.hl li::before { content: ""; position: absolute; left: 0; top: .6em; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--accent)); }
+
+/* AI helper */
+.chips-in { display: flex; gap: 8px; flex-wrap: wrap; }
+.ai-out { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border-radius: 10px; background: var(--surface-2); font-size: 14px; line-height: 1.6; max-height: 460px; overflow-y: auto; }
+.ai-out.thinking { color: var(--muted); font-style: italic; }
+
+/* Coach */
+.chat { gap: 0; padding: 0; overflow: hidden; }
+.chat-log { display: grid; gap: 12px; padding: 18px; max-height: min(62vh, 640px); min-height: 280px; overflow-y: auto; align-content: start; }
+.msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.user { justify-self: end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.msg.bot { justify-self: start; background: var(--surface-2); border-bottom-left-radius: 4px; }
+.msg.bot.thinking { color: var(--muted); font-style: italic; }
+.msg.err { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--ink); }
+.notes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; white-space: normal; }
+.note { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--surface); color: var(--c, var(--ink)); border: 1px solid var(--line); }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 18px 12px; scrollbar-width: thin; }
+.chip { flex: none; appearance: none; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.chip:hover { border-color: var(--accent); }
+.chat-form { display: flex; gap: 8px; padding: 12px 18px 18px; border-top: 1px solid var(--line); align-items: flex-end; }
+.chat-form textarea { resize: none; flex: 1; }
+.hint { font-size: 13px; color: var(--muted); padding: 0 18px 14px; }
+.hint:empty { display: none; }
+
+/* Phone: bottom tab bar + "More" sheet */
+.bnav { display: none; }
+.bnav a, .bnav button { appearance: none; border: 0; background: none; display: grid; justify-items: center; gap: 2px; font-size: 11px; font-weight: 600; color: var(--muted); text-decoration: none; padding: 4px 0; cursor: pointer; min-height: 48px; }
+.bnav .ic { width: 44px; height: 28px; border-radius: 999px; display: grid; place-items: center; }
+.bnav svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bnav [aria-current="page"] { color: var(--c, var(--accent)); }
+.bnav [aria-current="page"] .ic { background: color-mix(in srgb, var(--c, var(--accent)) 18%, transparent); }
+.sheet-bg { position: fixed; inset: 0; background: rgba(0, 0, 0, .4); z-index: 11; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 12; background: var(--surface); border-radius: 20px 20px 0 0; padding: 20px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); box-shadow: 0 -10px 30px rgba(0, 0, 0, .2); display: grid; gap: 14px; }
+.sheet h2 { font-size: 1rem; }
+.sheet-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.sheet-grid a { display: grid; justify-items: center; gap: 8px; padding: 16px 6px; border-radius: 14px; background: var(--bg); text-decoration: none; color: var(--ink); font-weight: 600; font-size: 13px; border: 1px solid var(--line); }
+.sheet-grid a .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--c, var(--accent)); }
+.sheet-grid a[aria-current="page"] { border-color: var(--c, var(--accent)); }
+@media (max-width: 700px) {
+  .tabs { display: none; }
+  .top-in { padding-block: 12px; }
+  .bnav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: var(--surface); border-top: 1px solid var(--line);
+    padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px)); }
+  main { padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+  .card { padding: 14px; }
+  .rest { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 20; max-width: calc(100% - 32px); }
+@media (prefers-reduced-motion: no-preference) { .toast { animation: rise .2s ease-out; } @keyframes rise { from { transform: translate(-50%, 8px); opacity: 0; } } }
+</style>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="#home"><span class="brand-mark" aria-hidden="true"></span>Life Agent</a>
+    <span class="sync" id="sync">Starting…</span>
+  </div>
+  <nav class="tabs wrap" id="tabs" aria-label="Apps"></nav>
+</header>
+<main class="wrap" id="main"></main>
+<nav class="bnav" id="bnav" aria-label="Main"></nav>
+<div class="sheet-bg" id="sheet-bg" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-label="All apps" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+"use strict";
+
+// ---------- Constants ----------
+const APPS = [
+  { id: "home",   label: "Home" },
+  { id: "gym",    label: "Gym",    blurb: "Log exercises, sets and weights. Your personal records update automatically." },
+  { id: "study",  label: "Study",  blurb: "Study with Pomodoro: you choose the focus time, break time and rounds. When you finish, save the session." },
+  { id: "work",   label: "Work",   blurb: "Log tasks and hours so you can see where your week went." },
+  { id: "health", label: "Health", blurb: "Sleep and water each day. Small habits, tracked consistently." },
+  { id: "mood",   label: "Mood",   blurb: "One tap a day. Patterns show up after a week or two." },
+  { id: "goals",  label: "Goals",  blurb: "What you're working toward. The coach can add and check these off for you." },
+  { id: "reminders", label: "Reminders", blurb: "Reminders for anything. They show here and on Home, pop up while the app is open, and “Add to Google Calendar” makes your phone alert you even when it's closed." },
+  { id: "reports", label: "Reports", blurb: "Your day, week, month and year across every app, compared with the period before. Ask the AI to write the report, then download it." },
+  { id: "coach",  label: "Coach",  blurb: "Tell it what you did in normal words. It saves everything to the right app and answers questions about your progress." },
+];
+const LOG_AREAS = ["gym", "study", "work", "health", "mood", "other"];
+const AREA_LABEL = { gym: "Gym", study: "Study", work: "Work", health: "Health", mood: "Mood", other: "Other", goals: "Goals" };
+const MOOD_LABEL = { 1: "Rough", 2: "Low", 3: "Okay", 4: "Good", 5: "Great" };
+const LOCAL_KEY = "lifeagent.v1";
+
+// ---------- Helpers ----------
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const today = () => ymd(new Date());
+const sinceDate = (days) => ymd(addDays(new Date(), -(Math.max(1, days) - 1)));
+const numOrNull = (v) => { if (v === "" || v === null || v === undefined) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+const newId = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const fmtDate = (s) => { if (s === today()) return "Today"; if (s === ymd(addDays(new Date(), -1))) return "Yesterday"; const d = new Date(s + "T12:00:00"); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
+const round1 = (n) => Math.round(n * 10) / 10;
+const sum = (arr, f) => arr.reduce((s, x) => s + (Number(f(x)) || 0), 0);
+const avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+// ---------- State & storage ----------
+const state = { entries: [], goals: [], reminders: [], links: [], plans: [], mode: "loading", readOnly: false };
+const KINDS = ["entries", "goals", "reminders", "links", "plans"];
+
+function setSync(t) { $("#sync").textContent = t; }
+let toastTimer;
+function toast(t) { const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2600); }
+
+const store = {
+  cols: {},
+  async init() {
+    let db = null, user = null, uid = null;
+    if (window.claude && typeof window.claude.use === "function") {
+      try { [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]); } catch (e) { db = null; }
+    }
+    if (db && user) { try { uid = await user.id(); } catch (e) { uid = null; } }
+    if (!db || !uid) return this.useLocal();
+
+    const base = db.doc("data/users/" + uid + "/profile");
+    for (const k of KINDS) this.cols[k] = base.collection(k);
+    state.mode = "cloud";
+    setSync("Loading your log…");
+    let confirmed = 0;
+    const timer = setTimeout(() => setSync("Can't reach your saved log yet"), 10000);
+    const ok = (snap) => { if (!snap.metadata.fromCache && ++confirmed >= KINDS.length) { clearTimeout(timer); setSync("Saved privately to your account"); } };
+    const fail = (e) => { clearTimeout(timer); setSync("Your log couldn't load (" + (e && e.code || "error") + ")"); };
+    for (const k of KINDS) this.cols[k].onSnapshot((snap) => { state[k] = snap.docs.map((d) => ({ ...d.data(), id: d.id })); ok(snap); changed(); }, fail);
+  },
+  useLocal() {
+    state.mode = "local";
+    try { const raw = localStorage.getItem(LOCAL_KEY); if (raw) { const d = JSON.parse(raw); for (const k of KINDS) state[k] = d[k] || []; } } catch (e) {}
+    setSync("Saved in this browser only");
+    changed();
+  },
+  saveLocal() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(Object.fromEntries(KINDS.map((k) => [k, state[k]])))); } catch (e) {} },
+  async write(kind, op, item) {
+    if (state.readOnly) throw { code: "read_only" };
+    if (state.mode === "cloud") {
+      const col = this.cols[kind];
+      const { id, ...body } = item;
+      try {
+        if (op === "put") await col.doc(id).set(body); else await col.doc(id).delete();
+      } catch (e) {
+        if (e && e.code === "invalid_argument") { state.readOnly = true; setSync("You can view this log but not change it"); }
+        throw e;
+      }
+    } else {
+      const arr = state[kind];
+      const i = arr.findIndex((x) => x.id === item.id);
+      if (op === "put") { if (i >= 0) arr[i] = item; else arr.push(item); } else if (i >= 0) arr.splice(i, 1);
+      this.saveLocal(); changed();
+    }
+  },
+  putEntry(e) { return this.write("entries", "put", e); },
+  delEntry(id) { return this.write("entries", "del", { id }); },
+  putGoal(g) { return this.write("goals", "put", g); },
+  delGoal(id) { return this.write("goals", "del", { id }); },
+  putReminder(r) { return this.write("reminders", "put", r); },
+  delReminder(id) { return this.write("reminders", "del", { id }); },
+  putLink(l) { return this.write("links", "put", l); },
+  putPlan(p) { return this.write("plans", "put", p); },
+  delLink(id) { return this.write("links", "del", { id }); },
+};
+
+function saveFailed(e) { toast(e && e.code === "read_only" ? "This log is read-only for you." : "Couldn't save. Check your connection and try again."); }
+
+// ---------- Entries ----------
+function makeEntry(area, f) {
+  area = LOG_AREAS.includes(area) ? area : "other";
+  const data = {};
+  let minutes = numOrNull(f.minutes);
+  let title = String(f.title || "").trim();
+  if (area === "gym") {
+    data.exercise = String(f.exercise || title || "Workout").trim();
+    data.sets = numOrNull(f.sets); data.reps = numOrNull(f.reps); data.weight = numOrNull(f.weight);
+    title = title || data.exercise;
+  } else if (area === "study") {
+    data.subject = String(f.subject || title || "Study").trim();
+    title = title || data.subject;
+  } else if (area === "work") {
+    data.status = ["done", "in progress", "blocked"].includes(f.status) ? f.status : "done";
+    title = title || "Work";
+  } else if (area === "health") {
+    data.sleepHours = numOrNull(f.sleepHours); data.water = numOrNull(f.water);
+    const parts = [];
+    if (data.sleepHours !== null) parts.push(`Slept ${data.sleepHours} h`);
+    if (data.water !== null) parts.push(`${data.water} glasses of water`);
+    title = title || parts.join(", ") || "Health check-in";
+  } else if (area === "mood") {
+    const s = Math.round(numOrNull(f.score) ?? 3);
+    data.score = Math.min(5, Math.max(1, s));
+    title = title || MOOD_LABEL[data.score];
+  }
+  return {
+    id: newId("e"), area, date: isDate(f.date) ? f.date : today(), title: title || "Entry",
+    minutes: minutes !== null ? Math.max(0, Math.round(minutes)) : null,
+    details: String(f.details || "").trim(), data, createdAt: Date.now(),
+  };
+}
+
+const sorted = (list) => [...list].sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt || 0) - (a.createdAt || 0));
+const inArea = (a) => state.entries.filter((e) => e.area === a);
+const recentIn = (a, days) => { const s = sinceDate(days); return state.entries.filter((e) => (!a || e.area === a) && e.date >= s); };
+
+function entryMeta(e) {
+  const d = e.data || {}, bits = [];
+  if (e.area === "gym" && Array.isArray(d.setLog) && d.setLog.length) {
+    bits.push(d.setLog.map((s) => (typeof s.w === "number" ? `${s.w} kg × ` : "") + s.r).join(", "));
+  } else if (e.area === "gym") {
+    if (d.sets && d.reps) bits.push(`${d.sets} × ${d.reps}`); else if (d.sets) bits.push(`${d.sets} sets`);
+    if (d.weight !== null && d.weight !== undefined) bits.push(`${d.weight} kg`);
+  }
+  if (e.area === "mood" && d.score) bits.push(`${d.score}/5`);
+  if (e.minutes) bits.push(e.minutes >= 90 ? `${round1(e.minutes / 60)} h` : `${e.minutes} min`);
+  if (e.details) bits.push(e.details);
+  return bits.join(" · ");
+}
+
+function stats(days = 7) {
+  const es = recentIn(null, days), by = (a) => es.filter((e) => e.area === a);
+  const sleep = by("health").map((e) => e.data && e.data.sleepHours).filter((v) => typeof v === "number");
+  const water = by("health").map((e) => e.data && e.data.water).filter((v) => typeof v === "number");
+  const mood = by("mood").map((e) => e.data && e.data.score).filter((v) => typeof v === "number");
+  return {
+    days,
+    gym: { sessions: new Set(by("gym").map((e) => e.date)).size, exercises: by("gym").length, minutes: sum(by("gym"), (e) => e.minutes) },
+    study: { hours: round1(sum(by("study"), (e) => e.minutes) / 60), sessions: by("study").length },
+    work: { hours: round1(sum(by("work"), (e) => e.minutes) / 60), tasks: by("work").length, done: by("work").filter((e) => e.data && e.data.status === "done").length },
+    health: { avgSleepHours: sleep.length ? round1(avg(sleep)) : null, avgWater: water.length ? round1(avg(water)) : null, checkIns: by("health").length },
+    mood: { average: mood.length ? round1(avg(mood)) : null, checkIns: mood.length },
+    goals: { open: state.goals.filter((g) => !g.done).length, done: state.goals.filter((g) => g.done).length },
+  };
+}
+
+function listHTML(list, { showArea = false, limit = 8, empty = "Nothing logged yet." } = {}) {
+  const items = sorted(list).slice(0, limit);
+  if (!items.length) return `<p class="empty">${esc(empty)}</p>`;
+  return `<div class="list">${items.map((e) => {
+    const st = e.area === "work" && e.data && e.data.status ? `<span class="pill ${e.data.status === "done" ? "done" : e.data.status === "blocked" ? "blocked" : ""}">${esc(e.data.status)}</span>` : "";
+    return `<div class="item a-${esc(e.area)}"><span class="date">${esc(fmtDate(e.date))}</span>
+      <div class="what">${showArea ? `<span class="tag">${esc(AREA_LABEL[e.area] || e.area)}</span>` : ""}<b>${esc(e.title)}</b>${st}<div class="meta">${esc(entryMeta(e))}</div></div>
+      <button class="del" data-del="${esc(e.id)}" aria-label="Delete ${esc(e.title)}">Delete</button></div>`;
+  }).join("")}</div>`;
+}
+
+function barsHTML(rows, unit) {
+  if (!rows.length) return `<p class="empty">No data this week yet.</p>`;
+  const max = Math.max(...rows.map((r) => r.v), 0.0001);
+  return `<div class="bars">${rows.map((r) => `<div class="bar"><span class="k" title="${esc(r.k)}">${esc(r.k)}</span><span class="track"><span class="fill" style="width:${Math.max(3, (r.v / max) * 100)}%"></span></span><span class="v">${esc(r.label ?? r.v + unit)}</span></div>`).join("")}</div>`;
+}
+
+const field = (id, label, attrs = "") => `<label for="${id}">${label}<input id="${id}" ${attrs}></label>`;
+const dateField = (id) => field(id, "Date", `type="date" value="${today()}" max="${today()}"`);
+const notesField = (id, ph) => field(id, "Notes", `placeholder="${ph}" autocomplete="off"`);
+const head = (app) => `<div class="area-head"><h1>${esc(app.label)}</h1><p>${esc(app.blurb)}</p></div>`;
+const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+
+// ---------- Views ----------
+const views = {};
+
+views.home = {
+  html() {
+    const h = new Date().getHours();
+    const greet = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+    return `<section class="hero">
+        <div class="area-head"><p class="muted">${esc(new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }))}</p><h1>${greet}</h1></div>
+        <form class="quick a-coach" id="quick"><label class="sr" for="quick-in" hidden>Tell your coach what you did</label><input id="quick-in" placeholder="Tell your coach: “ran 5k, studied 2h of math”" autocomplete="off"><button class="btn">Send</button></form>
+      </section>
+      <div class="card a-reminders"><div class="card-head"><h2>Today's reminders</h2><a class="cal" href="#reminders">Manage</a></div><div id="home-rem"></div></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="two">
+        <div class="card"><div class="card-head"><h2>Last 7 days</h2><span class="muted" style="font-size:13px">Filled = logged that day</span></div><div id="weekgrid"></div></div>
+        <div class="card"><h2>Recent activity</h2><div id="home-recent"></div></div>
+      </div>`;
+  },
+  bind() {
+    $("#quick").addEventListener("submit", (ev) => { ev.preventDefault(); const t = val("quick-in"); if (!t) return; pendingCoachMessage = t; location.hash = "#coach"; });
+  },
+  refresh() {
+    const tr = todaysReminders();
+    $("#home-rem").innerHTML = tr.length ? tr.map((r) => reminderRow(r, { showCal: false })).join("") : `<p class="empty">No reminders today. <a class="cal" href="#reminders">Add one</a></p>`;
+    const s = stats(7);
+    const f = (v, d = "–") => (v === null || v === undefined ? d : v);
+    const tiles = [
+      ["gym", "Gym", s.gym.sessions, s.gym.sessions === 1 ? "session" : "sessions", `${s.gym.exercises} exercises logged`],
+      ["study", "Study", s.study.hours, "hours", `${s.study.sessions} sessions`],
+      ["work", "Work", s.work.hours, "hours", `${s.work.done} of ${s.work.tasks} tasks done`],
+      ["health", "Health", f(s.health.avgSleepHours), "h sleep", s.health.avgWater !== null ? `${s.health.avgWater} glasses water / day` : "average per night"],
+      ["mood", "Mood", f(s.mood.average), "/ 5", `${s.mood.checkIns} check-ins`],
+      ["goals", "Goals", s.goals.open, "open", `${s.goals.done} completed`],
+    ];
+    $("#tiles").innerHTML = tiles.map(([id, l, big, unit, sub]) => `<a class="tile a-${id}" href="#${id}"><span class="lbl">${l} · this week</span><span class="big">${esc(big)}<small>${esc(unit)}</small></span><span class="sub">${esc(sub)}</span></a>`).join("");
+
+    const days = [...Array(7)].map((_, i) => addDays(new Date(), i - 6));
+    const rows = ["gym", "study", "work", "health", "mood"];
+    let g = `<div class="week"><span></span>${days.map((d) => `<span class="dname ${ymd(d) === today() ? "today" : ""}">${esc(d.toLocaleDateString(undefined, { weekday: "short" }).slice(0, 2))}</span>`).join("")}`;
+    for (const a of rows) {
+      g += `<span class="rname">${AREA_LABEL[a]}</span>`;
+      for (const d of days) {
+        const es = state.entries.filter((e) => e.area === a && e.date === ymd(d));
+        g += `<span class="cell a-${a} ${es.length ? "on" : ""}" title="${esc(AREA_LABEL[a] + ", " + fmtDate(ymd(d)) + ": " + (es.length ? es.map((e) => e.title).join(", ") : "nothing logged"))}"></span>`;
+      }
+    }
+    $("#weekgrid").innerHTML = g + "</div>";
+    $("#home-recent").innerHTML = listHTML(state.entries, { showArea: true, limit: 7, empty: "Nothing yet. Open an app above, or tell the coach what you did today." });
+  },
+};
+
+views.gym = {
+  html() {
+    return `<section class="area-head a-gym">${head(APPS[1]).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="card a-gym" id="plan-card"></div>
+      <div class="card a-gym"><div class="card-head"><h2>Exercise library</h2><span class="muted" style="font-size:13px" id="lib-count"></span></div>
+        <p class="muted" style="font-size:13px">Photos and step-by-step instructions. Beginner-friendly exercises come first.</p>
+        <label for="lib-q" hidden>Search exercises</label><input id="lib-q" placeholder="Search: bench, squat, curl, row…" autocomplete="off" value="${esc(libUi.q)}">
+        <div class="chips-in" id="lib-groups"></div>
+        <div class="lib-list" id="lib-list"></div></div>
+      <div class="cols a-gym">
+        <form class="card form" id="f-gym"><h2>Quick log (outside your plan)</h2>
+          ${field("g-ex", "Exercise", 'list="g-exlist" required placeholder="Bench press" autocomplete="off"')}<datalist id="g-exlist"></datalist>
+          <div class="row">${field("g-sets", "Sets", 'type="number" min="1" inputmode="numeric" placeholder="4"')}${field("g-reps", "Reps", 'type="number" min="1" inputmode="numeric" placeholder="8"')}${field("g-weight", "Weight (kg)", 'type="number" min="0" step="0.5" inputmode="decimal" placeholder="60"')}</div>
+          <div class="row">${field("g-min", "Minutes", 'type="number" min="0" inputmode="numeric" placeholder="optional"')}${dateField("g-date")}</div>
+          ${notesField("g-notes", "Felt strong, last set hard")}
+          <button class="btn">Save exercise</button></form>
+        <div class="stack">
+          <div class="card"><h2>This week</h2><div id="gym-week"></div></div>
+          <div class="card"><div class="card-head"><h2>Personal records</h2><span class="muted" style="font-size:13px">Heaviest weight per exercise</span></div><div id="gym-prs"></div></div>
+          <div class="card"><h2>History</h2><div id="gym-recent"></div></div>
+        </div>
+      </div>`;
+  },
+  bind() {
+    $("#f-gym").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const e = makeEntry("gym", { exercise: val("g-ex"), sets: val("g-sets"), reps: val("g-reps"), weight: val("g-weight"), minutes: val("g-min"), date: val("g-date"), details: val("g-notes") });
+      try { await store.putEntry(e); toast(`Saved ${e.title}`); ["g-sets", "g-reps", "g-weight", "g-min", "g-notes"].forEach((id) => { $("#" + id).value = ""; }); $("#g-ex").focus(); } catch (err) { saveFailed(err); }
+    });
+    paintPlan();
+    paintLibrary();
+    if (session) startGymClock();
+  },
+  refresh() {
+    if (!session && !(planDirty && $("#plan-form"))) paintPlan();
+    const s = stats(7);
+    $("#gym-week").innerHTML = `<div class="stats a-gym"><div class="stat"><span class="big">${s.gym.sessions}</span><span class="sub">training days</span></div><div class="stat"><span class="big">${s.gym.exercises}</span><span class="sub">exercises</span></div><div class="stat"><span class="big">${s.gym.minutes ? round1(s.gym.minutes / 60) : 0}</span><span class="sub">hours</span></div></div>`;
+    const prs = {};
+    for (const e of inArea("gym")) {
+      const ex = (e.data && e.data.exercise) || e.title, w = e.data && e.data.weight;
+      if (typeof w !== "number") continue;
+      const k = ex.toLowerCase();
+      if (!prs[k] || w > prs[k].w || (w === prs[k].w && e.date > prs[k].date)) prs[k] = { name: ex, w, date: e.date };
+    }
+    const rows = Object.values(prs).sort((a, b) => b.w - a.w).slice(0, 8).map((p) => ({ k: p.name, v: p.w, label: `${p.w} kg` }));
+    $("#gym-prs").innerHTML = rows.length ? barsHTML(rows, " kg") : `<p class="empty">Log an exercise with a weight to start tracking records.</p>`;
+    const names = [...new Set(inArea("gym").map((e) => (e.data && e.data.exercise) || e.title))];
+    const dl = $("#g-exlist"); if (dl) dl.innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
+    $("#gym-recent").innerHTML = listHTML(inArea("gym"), { limit: 12, empty: "No workouts yet. Log your first exercise on the left." });
+  },
+};
+
+// Pomodoro timer (keeps running across tab switches; your settings are remembered on this device)
+const POMO_KEY = "lifeagent.pomo";
+const pomo = { study: 30, brk: 5, rounds: 4, phase: "idle", round: 1, running: false, endsAt: 0, remaining: 0, studiedMs: 0, iv: null };
+try { const s = JSON.parse(localStorage.getItem(POMO_KEY) || "{}"); for (const k of ["study", "brk", "rounds"]) if (Number(s[k]) > 0) pomo[k] = Number(s[k]); } catch (e) {}
+const savePomo = () => { try { localStorage.setItem(POMO_KEY, JSON.stringify({ study: pomo.study, brk: pomo.brk, rounds: pomo.rounds })); } catch (e) {} };
+const inSession = () => pomo.phase === "study" || pomo.phase === "break";
+const phaseMs = () => (pomo.phase === "break" ? pomo.brk : pomo.study) * 60000;
+const pomoLeft = () => !inSession() ? pomo.study * 60000 : pomo.running ? Math.max(0, pomo.endsAt - Date.now()) : pomo.remaining;
+const studiedMin = () => Math.round((pomo.studiedMs + (pomo.phase === "study" ? phaseMs() - pomoLeft() : 0)) / 60000);
+const fmtTimer = (ms) => { const s = Math.ceil(ms / 1000); return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`; };
+let audioCtx = null;
+function beep(times) {
+  try {
+    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    for (let i = 0; i < times; i++) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.35;
+      o.frequency.value = 880; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.32);
+    }
+  } catch (e) {}
+}
+function nextPhase(elapsedMs, from) {
+  if (pomo.phase === "study") {
+    pomo.studiedMs += Math.max(0, elapsedMs);
+    if (pomo.round >= pomo.rounds) { pomo.phase = "done"; pomo.running = false; clearInterval(pomo.iv); beep(3); toast(`All ${pomo.rounds} rounds done! Save your session in Study.`); return; }
+    pomo.phase = "break"; beep(2); toast(`Break time: ${pomo.brk} min. Stand up, drink water.`);
+  } else { pomo.round++; pomo.phase = "study"; beep(1); toast(`Round ${pomo.round} of ${pomo.rounds}: focus for ${pomo.study} min`); }
+  pomo.endsAt = from + phaseMs(); pomo.remaining = phaseMs();
+}
+function pomoTick() {
+  let guard = 0;
+  while (pomo.running && Date.now() >= pomo.endsAt && guard++ < 50) nextPhase(phaseMs(), pomo.endsAt);
+  paintPomo();
+}
+function pomoToggle() {
+  beep(0); // unlocks sound on phones (needs a tap)
+  if (!inSession()) { pomo.phase = "study"; pomo.round = 1; pomo.studiedMs = 0; pomo.endsAt = Date.now() + phaseMs(); pomo.running = true; toast(`Focus for ${pomo.study} min. Phone on Focus mode!`); }
+  else if (pomo.running) { pomo.remaining = pomoLeft(); pomo.running = false; }
+  else { pomo.endsAt = Date.now() + pomo.remaining; pomo.running = true; }
+  clearInterval(pomo.iv); if (pomo.running) pomo.iv = setInterval(pomoTick, 500);
+  paintPomo();
+}
+function pomoSkip() {
+  if (!inSession()) return;
+  nextPhase(phaseMs() - pomoLeft(), Date.now());
+  if (!pomo.running && inSession()) pomo.remaining = phaseMs();
+  paintPomo();
+}
+function pomoReset() { pomo.phase = "idle"; pomo.running = false; pomo.round = 1; pomo.studiedMs = 0; clearInterval(pomo.iv); paintPomo(); }
+function paintPomo() {
+  const d = $("#t-display"); if (!d) return;
+  const left = pomoLeft();
+  d.textContent = fmtTimer(left);
+  $("#t-box").dataset.phase = pomo.phase;
+  $("#t-phase").textContent = ({ idle: `Ready: ${pomo.rounds} × ${pomo.study} min focus, ${pomo.brk} min breaks`, done: "Done! Save your session below.", study: `Focus · round ${pomo.round} of ${pomo.rounds}`, break: `Break · round ${pomo.round + 1} next` })[pomo.phase] + (inSession() && !pomo.running ? " (paused)" : "");
+  $("#t-start").textContent = pomo.running ? "Pause" : inSession() ? "Resume" : "Start";
+  $("#t-skip").disabled = !inSession();
+  $("#t-skip").textContent = pomo.phase === "break" ? "Skip break" : "Skip to break";
+  $("#t-bar").style.width = inSession() ? `${100 * (1 - left / phaseMs())}%` : pomo.phase === "done" ? "100%" : "0%";
+  $("#t-studied").textContent = studiedMin() ? `Studied ${studiedMin()} min` : "";
+  for (const id of ["p-study", "p-break", "p-rounds"]) { const el = $("#" + id); if (el) el.disabled = pomo.running; }
+}
+
+views.study = {
+  html() {
+    return `<section class="area-head a-study">${head(APPS[2]).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="cols a-study">
+        <form class="card form" id="f-study"><h2>Log a study session</h2>
+          <div class="pomo" id="t-box" data-phase="idle">
+            <div class="pomo-top"><span class="pomo-phase" id="t-phase">Ready</span><span class="muted num" id="t-studied" style="font-size:13px"></span></div>
+            <span class="num pomo-time" id="t-display" aria-live="off">30:00</span>
+            <div class="track"><span class="fill" id="t-bar"></span></div>
+            <div class="btns"><button type="button" class="btn" id="t-start">Start</button><button type="button" class="btn ghost" id="t-skip">Skip to break</button><button type="button" class="btn ghost" id="t-reset">Reset</button></div>
+            <div class="row">${field("p-study", "Focus (min)", `type="number" min="1" max="180" inputmode="numeric" value="${pomo.study}"`)}${field("p-break", "Break (min)", `type="number" min="1" max="60" inputmode="numeric" value="${pomo.brk}"`)}${field("p-rounds", "Rounds", `type="number" min="1" max="12" inputmode="numeric" value="${pomo.rounds}"`)}</div>
+            <p class="muted" style="font-size:12px">Turn on Focus / Do Not Disturb on your phone before you start, so social apps stay blocked. Keep this page open to hear the beeps.</p>
+          </div>
+          ${field("s-sub", "Subject", 'list="s-sublist" required placeholder="Math" autocomplete="off"')}<datalist id="s-sublist"></datalist>
+          <div class="row">${field("s-min", "Minutes", 'type="number" min="1" inputmode="numeric" placeholder="from timer"')}${dateField("s-date")}</div>
+          ${notesField("s-notes", "Chapter 5, practice problems")}
+          <button class="btn">Save session</button></form>
+        <div class="stack">
+          <div class="card"><h2>This week by subject</h2><div id="study-week"></div></div>
+          <div class="card"><h2>History</h2><div id="study-recent"></div></div>
+        </div>
+      </div>`;
+  },
+  bind() {
+    $("#t-start").addEventListener("click", pomoToggle);
+    $("#t-skip").addEventListener("click", pomoSkip);
+    $("#t-reset").addEventListener("click", pomoReset);
+    const lim = { "p-study": ["study", 1, 180], "p-break": ["brk", 1, 60], "p-rounds": ["rounds", 1, 12] };
+    for (const [id, [key, lo, hi]] of Object.entries(lim)) {
+      $("#" + id).addEventListener("change", (ev) => {
+        const n = Math.round(Number(ev.target.value));
+        if (!Number.isFinite(n) || n < lo) { ev.target.value = pomo[key]; return; }
+        pomo[key] = Math.min(hi, n); ev.target.value = pomo[key]; savePomo();
+        if (!pomo.running && inSession()) pomo.remaining = Math.min(pomo.remaining, phaseMs());
+        paintPomo();
+      });
+    }
+    $("#f-study").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      let mins = val("s-min");
+      const fromTimer = !mins && studiedMin() > 0;
+      if (fromTimer) mins = studiedMin();
+      if (!mins) { toast("Enter minutes, or study with the timer first."); return; }
+      const notes = [val("s-notes"), fromTimer ? `Pomodoro ${pomo.study}/${pomo.brk}` : ""].filter(Boolean).join(" · ");
+      const e = makeEntry("study", { subject: val("s-sub"), minutes: mins, date: val("s-date"), details: notes });
+      try { await store.putEntry(e); toast(`Saved ${e.minutes || 0} min of ${e.title}`); if (fromTimer) pomoReset(); ["s-min", "s-notes"].forEach((id) => { $("#" + id).value = ""; }); } catch (err) { saveFailed(err); }
+    });
+    paintPomo();
+  },
+  refresh() {
+    const by = {};
+    for (const e of recentIn("study", 7)) { const k = (e.data && e.data.subject) || e.title; by[k] = (by[k] || 0) + (e.minutes || 0); }
+    const rows = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, m]) => ({ k, v: m, label: m >= 60 ? `${round1(m / 60)} h` : `${m} min` }));
+    $("#study-week").innerHTML = barsHTML(rows, "");
+    const names = [...new Set(inArea("study").map((e) => (e.data && e.data.subject) || e.title))];
+    const dl = $("#s-sublist"); if (dl) dl.innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
+    $("#study-recent").innerHTML = listHTML(inArea("study"), { limit: 12, empty: "No study sessions yet. Start the focus timer or log one on the left." });
+  },
+};
+
+views.work = {
+  html() {
+    return `<section class="area-head a-work">${head(APPS[3]).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="cols a-work">
+        <form class="card form" id="f-work"><h2>Log a task</h2>
+          ${field("w-task", "Task", 'required placeholder="Finish the portfolio report" autocomplete="off"')}
+          <div class="row">${field("w-hours", "Hours", 'type="number" min="0" step="0.25" inputmode="decimal" placeholder="2"')}
+            <label for="w-status">Status<select id="w-status"><option value="done">Done</option><option value="in progress">In progress</option><option value="blocked">Blocked</option></select></label></div>
+          ${dateField("w-date")}
+          ${notesField("w-notes", "What's left, who's waiting")}
+          <button class="btn">Save task</button></form>
+        <div class="stack">
+          <div class="card"><h2>This week</h2><div id="work-week"></div></div>
+          <div class="card"><h2>History</h2><div id="work-recent"></div></div>
+        </div>
+      </div>`;
+  },
+  bind() {
+    $("#f-work").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const h = numOrNull(val("w-hours"));
+      const e = makeEntry("work", { title: val("w-task"), minutes: h !== null ? h * 60 : null, status: val("w-status"), date: val("w-date"), details: val("w-notes") });
+      try { await store.putEntry(e); toast(`Saved ${e.title}`); ["w-task", "w-hours", "w-notes"].forEach((id) => { $("#" + id).value = ""; }); } catch (err) { saveFailed(err); }
+    });
+  },
+  refresh() {
+    const s = stats(7);
+    const days = [...Array(7)].map((_, i) => ymd(addDays(new Date(), i - 6)));
+    const rows = days.map((d) => ({ k: new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric" }), v: sum(state.entries.filter((e) => e.area === "work" && e.date === d), (e) => e.minutes) / 60 }));
+    $("#work-week").innerHTML = `<div class="stats a-work"><div class="stat"><span class="big">${s.work.hours}</span><span class="sub">hours</span></div><div class="stat"><span class="big">${s.work.done}</span><span class="sub">tasks done</span></div><div class="stat"><span class="big">${s.work.tasks - s.work.done}</span><span class="sub">open or blocked</span></div></div>`
+      + (rows.some((r) => r.v) ? barsHTML(rows.map((r) => ({ ...r, label: r.v ? `${round1(r.v)} h` : "–" })), "") : "");
+    $("#work-recent").innerHTML = listHTML(inArea("work"), { limit: 12, empty: "No tasks yet. Log what you worked on today." });
+  },
+};
+
+views.health = {
+  html() {
+    return `<section class="area-head a-health">${head(APPS[4]).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="cols a-health">
+        <form class="card form" id="f-health"><h2>Daily check-in</h2>
+          <div class="row">${field("h-sleep", "Sleep (hours)", 'type="number" min="0" max="24" step="0.25" inputmode="decimal" placeholder="7.5"')}${field("h-water", "Water (glasses)", 'type="number" min="0" max="40" inputmode="numeric" placeholder="8"')}</div>
+          ${dateField("h-date")}
+          ${notesField("h-notes", "Woke up once, headache gone")}
+          <button class="btn">Save check-in</button></form>
+        <div class="stack">
+          <div class="card"><div class="card-head"><h2>Sleep, last 7 nights</h2><span class="muted num" id="h-avg" style="font-size:13px"></span></div><div id="health-week"></div></div>
+          <div class="card"><h2>History</h2><div id="health-recent"></div></div>
+        </div>
+      </div>`;
+  },
+  bind() {
+    $("#f-health").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!val("h-sleep") && !val("h-water")) { toast("Add sleep hours or water first."); return; }
+      const e = makeEntry("health", { sleepHours: val("h-sleep"), water: val("h-water"), date: val("h-date"), details: val("h-notes") });
+      try { await store.putEntry(e); toast("Check-in saved"); ["h-sleep", "h-water", "h-notes"].forEach((id) => { $("#" + id).value = ""; }); } catch (err) { saveFailed(err); }
+    });
+  },
+  refresh() {
+    const s = stats(7);
+    $("#h-avg").textContent = s.health.avgSleepHours !== null ? `avg ${s.health.avgSleepHours} h` : "";
+    const days = [...Array(7)].map((_, i) => ymd(addDays(new Date(), i - 6)));
+    const rows = days.map((d) => {
+      const v = state.entries.filter((e) => e.area === "health" && e.date === d).map((e) => e.data && e.data.sleepHours).filter((x) => typeof x === "number");
+      return { k: new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric" }), v: v.length ? v[v.length - 1] : 0 };
+    });
+    $("#health-week").innerHTML = rows.some((r) => r.v) ? barsHTML(rows.map((r) => ({ ...r, label: r.v ? `${r.v} h` : "–" })), "") : `<p class="empty">Log last night's sleep to see your week.</p>`;
+    $("#health-recent").innerHTML = listHTML(inArea("health"), { limit: 12, empty: "No check-ins yet." });
+  },
+};
+
+views.mood = {
+  html() {
+    return `<section class="area-head a-mood">${head(APPS[5]).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="cols a-mood">
+        <form class="card form" id="f-mood"><h2>How are you today?</h2>
+          <fieldset style="border:0;padding:0;margin:0"><legend class="muted" style="font-size:13px;font-weight:600;margin-bottom:5px">Mood</legend>
+          <div class="moods">${[1, 2, 3, 4, 5].map((n) => `<input type="radio" name="mood" id="m-${n}" value="${n}" ${n === 3 ? "checked" : ""}><label for="m-${n}"><b>${n}</b><span>${MOOD_LABEL[n]}</span></label>`).join("")}</div></fieldset>
+          ${dateField("m-date")}
+          ${notesField("m-notes", "Why? Good workout, slept badly…")}
+          <button class="btn">Save mood</button></form>
+        <div class="stack">
+          <div class="card"><div class="card-head"><h2>Last 7 days</h2><span class="muted num" id="m-avg" style="font-size:13px"></span></div><div id="mood-week"></div></div>
+          <div class="card"><h2>History</h2><div id="mood-recent"></div></div>
+        </div>
+      </div>`;
+  },
+  bind() {
+    $("#f-mood").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const score = ($('input[name="mood"]:checked') || {}).value || 3;
+      const e = makeEntry("mood", { score, date: val("m-date"), details: val("m-notes") });
+      try { await store.putEntry(e); toast(`Mood saved: ${e.title}`); $("#m-notes").value = ""; } catch (err) { saveFailed(err); }
+    });
+  },
+  refresh() {
+    const s = stats(7);
+    $("#m-avg").textContent = s.mood.average !== null ? `avg ${s.mood.average} / 5` : "";
+    const days = [...Array(7)].map((_, i) => ymd(addDays(new Date(), i - 6)));
+    const rows = days.map((d) => {
+      const v = state.entries.filter((e) => e.area === "mood" && e.date === d).map((e) => e.data && e.data.score).filter((x) => typeof x === "number");
+      const a = v.length ? round1(avg(v)) : 0;
+      return { k: new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric" }), v: a, label: a ? `${a} ${MOOD_LABEL[Math.round(a)]}` : "–" };
+    });
+    $("#mood-week").innerHTML = rows.some((r) => r.v) ? barsHTML(rows, "") : `<p class="empty">Pick a number on the left. It takes two seconds.</p>`;
+    $("#mood-recent").innerHTML = listHTML(inArea("mood"), { limit: 12, empty: "No moods logged yet." });
+  },
+};
+
+views.goals = {
+  html() {
+    return `<section class="area-head a-goals">${head(APPS[6]).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="cols a-goals">
+        <form class="card form" id="f-goal"><h2>Add a goal</h2>
+          ${field("gl-text", "Goal", 'required placeholder="Bench press 80 kg" autocomplete="off"')}
+          <div class="row"><label for="gl-area">App<select id="gl-area">${LOG_AREAS.map((a) => `<option value="${a}">${AREA_LABEL[a]}</option>`).join("")}</select></label>${field("gl-dead", "Deadline", 'type="date"')}</div>
+          <button class="btn">Add goal</button></form>
+        <div class="stack">
+          <div class="card"><h2>Working on</h2><div id="goals-open"></div></div>
+          <div class="card"><h2>Completed</h2><div id="goals-done"></div></div>
+        </div>
+      </div>`;
+  },
+  bind() {
+    $("#f-goal").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const g = makeGoal(val("gl-area"), val("gl-text"), val("gl-dead"));
+      try { await store.putGoal(g); toast("Goal added"); $("#gl-text").value = ""; $("#gl-dead").value = ""; } catch (err) { saveFailed(err); }
+    });
+  },
+  refresh() {
+    const row = (g) => `<div class="goal a-${esc(g.area)} ${g.done ? "done" : ""}"><input type="checkbox" data-goal-toggle="${esc(g.id)}" ${g.done ? "checked" : ""} aria-label="Mark ${esc(g.text)} ${g.done ? "not done" : "done"}">
+      <div class="what"><span class="tag">${esc(AREA_LABEL[g.area] || g.area)}</span><span class="gtext">${esc(g.text)}</span><div class="meta muted" style="font-size:13px">${g.done && g.completed ? "Done " + esc(fmtDate(g.completed)) : g.deadline ? "By " + esc(new Date(g.deadline + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })) : "No deadline"}</div></div>
+      <button class="del" data-goal-del="${esc(g.id)}" aria-label="Delete goal">Delete</button></div>`;
+    const open = state.goals.filter((g) => !g.done).sort((a, b) => (a.deadline || "9999").localeCompare(b.deadline || "9999"));
+    const done = state.goals.filter((g) => g.done).sort((a, b) => (b.completed || "").localeCompare(a.completed || ""));
+    $("#goals-open").innerHTML = open.length ? open.map(row).join("") : `<p class="empty">No open goals. Add one, or tell the coach “my goal is to study 10 hours a week”.</p>`;
+    $("#goals-done").innerHTML = done.length ? done.map(row).join("") : `<p class="empty">Checked-off goals show up here.</p>`;
+  },
+};
+
+// ---------- Reminders ----------
+const REPEAT_LABEL = { once: "Once", daily: "Every day", weekdays: "Weekdays", weekly: "Every week" };
+const isTime = (s) => /^\d{2}:\d{2}$/.test(String(s || ""));
+function makeReminder(f) {
+  const repeat = REPEAT_LABEL[f.repeat] ? f.repeat : "daily";
+  return { id: newId("r"), text: String(f.text || "").trim() || "Reminder", area: LOG_AREAS.includes(f.area) ? f.area : "other",
+    time: isTime(f.time) ? f.time : "09:00", repeat, date: isDate(f.date) ? f.date : today(), created: today() };
+}
+function dueOn(r, dateStr) {
+  const d = new Date(dateStr + "T12:00:00"), wd = d.getDay();
+  if (r.repeat === "once") return r.date === dateStr;
+  if (dateStr < (r.date || "0000")) return false;
+  if (r.repeat === "daily") return true;
+  if (r.repeat === "weekdays") return wd >= 1 && wd <= 5;
+  if (r.repeat === "weekly") return new Date(r.date + "T12:00:00").getDay() === wd;
+  return false;
+}
+function firstDate(r) {
+  for (let i = 0; i < 8; i++) { const d = ymd(addDays(new Date(Math.max(Date.now(), new Date((r.date || today()) + "T12:00:00").getTime())), i)); if (dueOn(r, d)) return d; }
+  return r.date || today();
+}
+function whenLabel(r) {
+  if (r.repeat === "once") return `${fmtDate(r.date)} ${r.time}`;
+  if (r.repeat === "weekly") return `${new Date(r.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" })}s ${r.time}`;
+  return `${REPEAT_LABEL[r.repeat]} ${r.time}`;
+}
+function gcalLink(r) {
+  const start = firstDate(r), [h, m] = r.time.split(":");
+  const end = new Date(`${start}T${r.time}:00`); end.setMinutes(end.getMinutes() + 15);
+  const p = new URLSearchParams({ action: "TEMPLATE", text: r.text, details: "Reminder from Life Agent",
+    dates: `${start.replace(/-/g, "")}T${h}${m}00/${ymd(end).replace(/-/g, "")}T${pad(end.getHours())}${pad(end.getMinutes())}00` });
+  try { p.set("ctz", Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (e) {}
+  const rr = { daily: "RRULE:FREQ=DAILY", weekdays: "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", weekly: "RRULE:FREQ=WEEKLY" }[r.repeat];
+  if (rr) p.set("recur", rr);
+  return "https://calendar.google.com/calendar/render?" + p.toString();
+}
+const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const todaysReminders = () => state.reminders.filter((r) => dueOn(r, today())).sort((a, b) => a.time.localeCompare(b.time));
+
+function reminderRow(r, { showCal = true } = {}) {
+  const dueToday = dueOn(r, today()), passed = dueToday && r.time <= nowHM();
+  return `<div class="goal a-${esc(r.area)}"><span class="rem-when ${dueToday && !passed ? "due" : ""}">${esc(dueToday ? r.time : "")}</span>
+    <div class="what"><span class="tag">${esc(AREA_LABEL[r.area] || r.area)}</span><span class="gtext">${esc(r.text)}</span><div class="meta muted" style="font-size:13px">${esc(whenLabel(r))}${passed ? " · done for today" : ""}</div></div>
+    <div class="rem-actions">${showCal ? `<a class="cal" href="${esc(gcalLink(r))}" target="_blank" rel="noopener">Add to Google Calendar</a>` : ""}<button class="del" data-rem-del="${esc(r.id)}" aria-label="Delete reminder">Delete</button></div></div>`;
+}
+
+views.reminders = {
+  html() {
+    return `<section class="area-head a-reminders">${head(APPS.find((a) => a.id === "reminders")).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="cols a-reminders">
+        <form class="card form" id="f-rem"><h2>New reminder</h2>
+          ${field("r-text", "Remind me to", 'required placeholder="Go to the gym" autocomplete="off"')}
+          <div class="row">${field("r-time", "Time", 'type="time" required value="18:00"')}
+            <label for="r-repeat">Repeat<select id="r-repeat"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="once">Once</option></select></label></div>
+          <div class="row">${field("r-date", "Starting / on", `type="date" value="${today()}" min="${today()}"`)}
+            <label for="r-area">App<select id="r-area">${LOG_AREAS.map((a) => `<option value="${a}">${AREA_LABEL[a]}</option>`).join("")}</select></label></div>
+          <button class="btn">Add reminder</button>
+          <p class="muted" style="font-size:13px">Tip: tap “Add to Google Calendar” on a reminder so your phone notifies you even when this app is closed.</p></form>
+        <div class="stack">
+          <div class="card"><h2>Today</h2><div id="rem-today"></div></div>
+          <div class="card"><h2>All reminders</h2><div id="rem-all"></div></div>
+        </div>
+      </div>`;
+  },
+  bind() {
+    $("#f-rem").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const r = makeReminder({ text: val("r-text"), time: val("r-time"), repeat: val("r-repeat"), date: val("r-date"), area: val("r-area") });
+      try { await store.putReminder(r); toast(`Reminder set: ${whenLabel(r)}`); $("#r-text").value = ""; } catch (err) { saveFailed(err); }
+    });
+  },
+  refresh() {
+    const t = todaysReminders();
+    $("#rem-today").innerHTML = t.length ? t.map((r) => reminderRow(r, { showCal: false })).join("") : `<p class="empty">Nothing due today.</p>`;
+    const all = [...state.reminders].sort((a, b) => (a.repeat === "once") - (b.repeat === "once") || a.time.localeCompare(b.time));
+    $("#rem-all").innerHTML = all.length ? all.map((r) => reminderRow(r)).join("") : `<p class="empty">No reminders yet. Add one, or tell the coach “remind me to drink water every day at 10am”.</p>`;
+  },
+};
+
+// Pop up reminders while the app is open
+const alerted = new Set();
+function checkReminders() {
+  const hm = nowHM(), d = today();
+  for (const r of todaysReminders()) {
+    const key = r.id + d;
+    if (r.time === hm && !alerted.has(key)) { alerted.add(key); beep(2); toast(r.area === "study" ? `⏰ ${r.text}: open Study and press Start` : `⏰ ${r.text}`); }
+  }
+}
+setInterval(checkReminders, 20000);
+
+function makeGoal(area, text, deadline) {
+  return { id: newId("g"), area: LOG_AREAS.includes(area) ? area : "other", text: String(text || "").trim() || "Goal", deadline: isDate(deadline) ? deadline : null, done: false, created: today(), completed: null };
+}
+
+// ---------- Coach (agent) ----------
+let samplePromise = null;
+const getSample = () => (samplePromise ||= (window.claude && typeof window.claude.use === "function" ? window.claude.use("sample").catch(() => null) : Promise.resolve(null)));
+const chat = []; // {role:'user'|'assistant', text, notes:[], err, pending}
+let chatCtl = null, coachDisabled = false, pendingCoachMessage = null;
+
+const SUGGESTIONS = [
+  "Remind me to go to the gym every weekday at 18:00",
+  "Did chest today: bench 60kg 4x8, incline dumbbell 22kg 3x10",
+  "Studied math for 90 minutes, finished chapter 5",
+  "Slept 6.5 hours, drank 5 glasses of water",
+  "How was my week?",
+  "Set a goal: study 10 hours a week",
+];
+
+function coachRules() {
+  const open = state.goals.filter((g) => !g.done).map((g) => `#${g.id} [${g.area}] ${g.text}${g.deadline ? " (by " + g.deadline + ")" : ""}`).join("\n") || "none";
+  return `You are Life Agent, the user's personal coach inside their life-tracking app. The app has these mini-apps: Gym, Study, Work, Health (sleep hours, water glasses), Mood (1-5) and Goals.
+Today is ${new Date().toLocaleDateString("en-US", { weekday: "long" })}, ${today()}.
+
+How to work:
+- When the user tells you something they did, save it with log_entry: one call per separate activity (each gym exercise is its own entry). Use the area-specific fields (exercise/sets/reps/weight, subject, status, sleepHours/water, score). Convert hours to minutes. For "yesterday" etc. pass the right date.
+- Questions about history or progress: call get_stats and/or get_entries first. Never invent past data.
+- Goals: add_goal, complete_goal (by id). Mention a relevant open goal when it is encouraging.
+- Reminders: when the user asks to be reminded of something, call add_reminder with a 24-hour time (HH:MM) and repeat (once, daily, weekdays, weekly). Tell them they can tap "Add to Google Calendar" in the Reminders app so their phone alerts them.
+- After saving, confirm briefly what you saved, then add at most one useful, specific coaching remark.
+- Reply in 1-4 short sentences of plain text, in the same language the user writes in. No headings or tables.
+
+Open goals:
+${open}`;
+}
+
+const coachTools = [
+  {
+    name: "log_entry",
+    description: "Save one activity the user did into the right app. Returns the saved entry.",
+    inputSchema: { type: "object", properties: {
+      area: { type: "string", enum: LOG_AREAS, description: "Which app it belongs to." },
+      title: { type: "string", description: "Short title. Optional for gym (uses exercise) and study (uses subject)." },
+      date: { type: "string", description: "YYYY-MM-DD. Omit for today." },
+      minutes: { type: "number", description: "Duration in minutes, if known." },
+      details: { type: "string", description: "Extra notes." },
+      exercise: { type: "string", description: "Gym: exercise name, e.g. Bench press." },
+      sets: { type: "number" }, reps: { type: "number" }, weight: { type: "number", description: "Gym: weight in kg." },
+      subject: { type: "string", description: "Study: subject." },
+      status: { type: "string", enum: ["done", "in progress", "blocked"], description: "Work: task status." },
+      sleepHours: { type: "number", description: "Health: hours slept." }, water: { type: "number", description: "Health: glasses of water." },
+      score: { type: "number", description: "Mood: 1 (rough) to 5 (great)." },
+    }, required: ["area"] },
+    async execute(i) {
+      const e = makeEntry(String(i.area), i);
+      await store.putEntry(e);
+      addNote(e.area, `Saved to ${AREA_LABEL[e.area]}: ${e.title}`);
+      return { saved: true, entry: { area: e.area, date: e.date, title: e.title, minutes: e.minutes, data: e.data, details: e.details } };
+    },
+  },
+  {
+    name: "get_entries",
+    description: "Get logged entries from the last N days, newest first, optionally for one app. Returns a list.",
+    inputSchema: { type: "object", properties: { area: { type: "string", enum: LOG_AREAS }, days: { type: "number", description: "Default 7." } } },
+    execute(i) {
+      const days = Math.min(365, Math.max(1, numOrNull(i.days) || 7));
+      const area = LOG_AREAS.includes(String(i.area)) ? String(i.area) : null;
+      const list = sorted(recentIn(area, days)).slice(0, 80).map((e) => ({ date: e.date, area: e.area, title: e.title, minutes: e.minutes, data: e.data, details: e.details || undefined }));
+      return list.length ? list : `No entries in the last ${days} days${area ? " for " + area : ""}.`;
+    },
+  },
+  {
+    name: "get_stats",
+    description: "Totals and averages per app (gym days, study and work hours, average sleep, average mood, goals) for the last N days.",
+    inputSchema: { type: "object", properties: { days: { type: "number", description: "Default 7." } } },
+    execute(i) { return stats(Math.min(365, Math.max(1, numOrNull(i.days) || 7))); },
+  },
+  {
+    name: "add_goal",
+    description: "Add a personal goal. Returns the new goal with its id.",
+    inputSchema: { type: "object", properties: { area: { type: "string", enum: LOG_AREAS }, goal: { type: "string" }, deadline: { type: "string", description: "YYYY-MM-DD, optional." } }, required: ["goal"] },
+    async execute(i) {
+      const g = makeGoal(String(i.area || "other"), i.goal, i.deadline);
+      await store.putGoal(g);
+      addNote("goals", `Goal added: ${g.text}`);
+      return { added: true, id: g.id, text: g.text };
+    },
+  },
+  {
+    name: "complete_goal",
+    description: "Mark an open goal as completed, by its id (the ids are listed in the instructions).",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    async execute(i) {
+      const id = String(i.id || "").replace(/^#/, "");
+      const g = state.goals.find((x) => x.id === id);
+      if (!g) throw new Error("No goal with that id.");
+      await store.putGoal({ ...g, done: true, completed: today() });
+      addNote("goals", `Goal completed: ${g.text}`);
+      return { completed: true, text: g.text };
+    },
+  },
+  {
+    name: "add_reminder",
+    description: "Create a reminder. Returns the saved reminder.",
+    inputSchema: { type: "object", properties: {
+      text: { type: "string", description: "What to remind, e.g. 'Go to the gym'." },
+      time: { type: "string", description: "24-hour HH:MM, e.g. 07:30." },
+      repeat: { type: "string", enum: ["once", "daily", "weekdays", "weekly"] },
+      date: { type: "string", description: "YYYY-MM-DD: the day for 'once', the first day for repeating ones. Omit for today." },
+      area: { type: "string", enum: LOG_AREAS },
+    }, required: ["text", "time"] },
+    async execute(i) {
+      const r = makeReminder({ text: i.text, time: String(i.time || "").padStart(5, "0"), repeat: i.repeat, date: i.date, area: i.area });
+      await store.putReminder(r);
+      addNote(r.area, `Reminder: ${r.text}, ${whenLabel(r)}`);
+      return { saved: true, text: r.text, when: whenLabel(r) };
+    },
+  },
+];
+
+function addNote(area, text) {
+  const m = [...chat].reverse().find((x) => x.role === "assistant" && x.pending);
+  if (m) { m.notes.push({ area, text }); paintChat(); }
+}
+
+function mdLite(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"); }
+
+function paintChat() {
+  const log = $("#chat-log"); if (!log) return;
+  const intro = `<div class="msg bot">Hi! Tell me what you did today in normal words, like “bench 60kg 4x8, then studied 2 hours of math”. I'll save it to the right app. You can also ask how your week went, or set a goal.</div>`;
+  log.innerHTML = intro + chat.map((m) => {
+    if (m.role === "user") return `<div class="msg user">${esc(m.text)}</div>`;
+    const notes = m.notes.length ? `<div class="notes">${m.notes.map((n) => `<span class="note a-${esc(n.area)}">✓ ${esc(n.text)}</span>`).join("")}</div>` : "";
+    const body = m.text ? mdLite(m.text) : m.pending ? (m.notes.length ? "Working…" : "Thinking…") : "";
+    return `<div class="msg bot ${m.err ? "err" : ""} ${m.pending && !m.text ? "thinking" : ""}">${body}${notes}</div>`;
+  }).join("");
+  log.scrollTop = log.scrollHeight;
+  const busy = !!chatCtl;
+  const send = $("#chat-send"), stop = $("#chat-stop");
+  if (send) send.disabled = busy || coachDisabled;
+  if (stop) stop.hidden = !busy;
+}
+
+function coachError(code) {
+  switch (code) {
+    case "not_granted": case "sampling_disabled": case "not_declared": case "capability_disabled": case "capability_removed":
+      coachDisabled = true; return "The coach needs permission to use Claude. Your apps still work. Reload the page to be asked again.";
+    case "rate_limited": return "You've hit a usage limit for now. Try again in a little while.";
+    case "session_expired": return "Your session expired. Sign in to claude.ai again.";
+    case "refused": return "I can't help with that one. Try asking a different way.";
+    case "prompt_too_large": return "That message is too long. Try a shorter one.";
+    default: return "Something went wrong reaching Claude. Send your message again.";
+  }
+}
+
+async function sendToCoach(text) {
+  text = String(text || "").trim();
+  if (!text || chatCtl || coachDisabled) return;
+  const sample = await getSample();
+  if (!sample) { coachDisabled = true; $("#coach-note").textContent = "The coach only works when this page is opened on claude.ai. Your apps still save normally."; paintChat(); return; }
+
+  const history = chat.filter((m) => !m.err && m.text).slice(-16).map((m) => ({ role: m.role, content: m.text }));
+  chat.push({ role: "user", text, notes: [] });
+  const bot = { role: "assistant", text: "", notes: [], pending: true };
+  chat.push(bot);
+  const ctl = new AbortController(); chatCtl = ctl; paintChat();
+
+  try {
+    let limits = null; try { limits = await sample.limits(); } catch (e) {}
+    const input = [{ role: "user", content: coachRules() }, ...history, { role: "user", content: text }];
+    if (limits && limits.tools) {
+      const res = await sample(input, { signal: ctl.signal, tools: coachTools, onText: ({ text: t }) => { bot.text = t; paintChat(); } });
+      bot.text = res.text;
+    } else {
+      // Fallback for viewers whose app can't run page tools: ask for a JSON plan and apply it here.
+      const recent = sorted(recentIn(null, 30)).slice(0, 100).map((e) => `${e.date} [${e.area}] ${e.title}${entryMeta(e) ? " - " + entryMeta(e) : ""}`).join("\n") || "none";
+      input[0] = { role: "user", content: coachRules() + `\n\nYou cannot call tools here. Recent entries (30 days):\n${recent}\nStats this week: ${JSON.stringify(stats(7))}\n\nReply with ONLY a JSON object: {"reply": string, "log": [{"area", "title", "date", "minutes", "details", "exercise", "sets", "reps", "weight", "subject", "status", "sleepHours", "water", "score"}], "add_goals": [{"area", "goal", "deadline"}], "complete_goal_ids": [string]}. Use empty arrays when there is nothing to save.` };
+      const res = await sample.json(input, { signal: ctl.signal, cache: false });
+      for (const l of (res && Array.isArray(res.log) ? res.log : [])) await coachTools[0].execute(l);
+      for (const g of (res && Array.isArray(res.add_goals) ? res.add_goals : [])) await coachTools[3].execute(g);
+      for (const id of (res && Array.isArray(res.complete_goal_ids) ? res.complete_goal_ids : [])) { try { await coachTools[4].execute({ id }); } catch (e) {} }
+      bot.text = (res && typeof res.reply === "string" && res.reply) || "Done.";
+    }
+  } catch (e) {
+    if (e && e.code === "cancelled") { bot.text = e.text || "(Stopped)"; }
+    else if (e && e.code === "refused") { bot.text = coachError("refused"); bot.err = true; }
+    else if (e && e.code) { bot.text = (e.text ? e.text + "\n\n" : "") + coachError(e.code); bot.err = !e.text; }
+    else { bot.text = "Couldn't save that. " + coachError(""); bot.err = true; }
+  } finally {
+    bot.pending = false; chatCtl = null; paintChat();
+  }
+}
+
+views.coach = {
+  html() {
+    return `<section class="area-head a-coach">${head(APPS.find((a) => a.id === "coach")).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="card chat a-coach">
+        <div class="chat-log" id="chat-log" aria-live="polite"></div>
+        <div class="chips" id="chips">${SUGGESTIONS.map((s) => `<button type="button" class="chip" data-suggest="${esc(s)}">${esc(s)}</button>`).join("")}</div>
+        <form class="chat-form" id="chat-form"><label for="chat-in" hidden>Message</label><textarea id="chat-in" rows="2" placeholder="What did you do today?"></textarea>
+          <button class="btn" id="chat-send">Send</button><button type="button" class="btn ghost" id="chat-stop" hidden>Stop</button></form>
+        <p class="hint" id="coach-note"></p>
+      </div>`;
+  },
+  bind() {
+    const box = $("#chat-in");
+    $("#chat-form").addEventListener("submit", (ev) => { ev.preventDefault(); const t = box.value; if (!t.trim() || chatCtl) return; box.value = ""; sendToCoach(t); });
+    box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("#chat-form").requestSubmit(); } });
+    $("#chat-stop").addEventListener("click", () => chatCtl && chatCtl.abort());
+    $("#chips").addEventListener("click", (ev) => { const b = ev.target.closest("[data-suggest]"); if (b) { box.value = b.dataset.suggest; box.focus(); } });
+    paintChat();
+    if (pendingCoachMessage) { const t = pendingCoachMessage; pendingCoachMessage = null; sendToCoach(t); }
+  },
+  refresh() {},
+};
+
+// ---------- Reports ----------
+const rep = { period: "week", offset: 0, ai: {}, ctl: null };
+const PERIOD_NOUN = { day: "day", week: "week", month: "month", year: "year" };
+function periodRange(period, offset) {
+  const now = new Date(); now.setHours(12, 0, 0, 0);
+  let s, e;
+  if (period === "day") { s = addDays(now, offset); e = s; }
+  else if (period === "week") { s = addDays(now, -((now.getDay() + 6) % 7) + offset * 7); e = addDays(s, 6); }
+  else if (period === "month") { s = new Date(now.getFullYear(), now.getMonth() + offset, 1, 12); e = new Date(s.getFullYear(), s.getMonth() + 1, 0, 12); }
+  else { s = new Date(now.getFullYear() + offset, 0, 1, 12); e = new Date(s.getFullYear(), 11, 31, 12); }
+  return { start: ymd(s), end: ymd(e), s, e };
+}
+function periodLabel(period, offset, r) {
+  if (period === "day") return offset === 0 ? "Today" : offset === -1 ? "Yesterday" : r.s.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  if (period === "week") return (offset === 0 ? "This week · " : offset === -1 ? "Last week · " : "") + `${r.s.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${r.e.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+  if (period === "month") return r.s.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  return String(r.s.getFullYear());
+}
+function setLogOf(e) {
+  const d = e.data || {};
+  if (Array.isArray(d.setLog) && d.setLog.length) return d.setLog;
+  return typeof d.weight === "number" && d.sets ? [...Array(d.sets)].map(() => ({ w: d.weight, r: d.reps || 0 })) : [];
+}
+function periodStats(r) {
+  const es = state.entries.filter((x) => x.date >= r.start && x.date <= r.end);
+  const by = (a) => es.filter((x) => x.area === a);
+  const gym = by("gym"), study = by("study"), work = by("work"), health = by("health"), mood = by("mood");
+  let volume = 0;
+  for (const g of gym) for (const s of setLogOf(g)) if (typeof s.w === "number") volume += s.w * (Number(s.r) || 0);
+  const before = {}, inRange = {};
+  for (const x of inArea("gym")) {
+    const k = exKey((x.data && x.data.exercise) || x.title);
+    for (const s of setLogOf(x)) {
+      if (typeof s.w !== "number") continue;
+      if (x.date < r.start) { if (before[k] === undefined || s.w > before[k]) before[k] = s.w; }
+      else if (x.date <= r.end && (!inRange[k] || s.w > inRange[k].w)) inRange[k] = { w: s.w, name: (x.data && x.data.exercise) || x.title };
+    }
+  }
+  const prs = Object.entries(inRange).filter(([k, v]) => before[k] !== undefined && v.w > before[k]).map(([k, v]) => `${v.name}: ${v.w} kg (was ${before[k]} kg)`);
+  const subj = {};
+  for (const s of study) { const k = (s.data && s.data.subject) || s.title; subj[k] = (subj[k] || 0) + (s.minutes || 0); }
+  const nums = (arr, f) => arr.map(f).filter((v) => typeof v === "number");
+  const sleep = nums(health, (x) => x.data && x.data.sleepHours), water = nums(health, (x) => x.data && x.data.water);
+  const moodByDay = {};
+  for (const m of mood) if (m.data && typeof m.data.score === "number") (moodByDay[m.date] ||= []).push(m.data.score);
+  const moodDays = Object.entries(moodByDay).map(([d, v]) => ({ d, v: avg(v) })).sort((a, b) => b.v - a.v);
+  return {
+    activeDays: new Set(es.map((x) => x.date)).size, entries: es.length,
+    gym: { days: new Set(gym.map((x) => x.date)).size, exercises: gym.length, volume: Math.round(volume), prs },
+    study: { hours: round1(sum(study, (x) => x.minutes) / 60), sessions: study.length, subjects: Object.entries(subj).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, m]) => ({ subject: k, hours: round1(m / 60) })) },
+    work: { hours: round1(sum(work, (x) => x.minutes) / 60), tasks: work.length, done: work.filter((x) => x.data && x.data.status === "done").length },
+    health: { sleep: sleep.length ? round1(avg(sleep)) : null, water: water.length ? round1(avg(water)) : null, checkIns: health.length },
+    mood: { avg: moodDays.length ? round1(avg(nums(mood, (x) => x.data && x.data.score))) : null, best: moodDays[0] || null, worst: moodDays.length > 1 ? moodDays[moodDays.length - 1] : null },
+    goalsDone: state.goals.filter((g) => g.done && g.completed && g.completed >= r.start && g.completed <= r.end).map((g) => g.text),
+    goalsOpen: state.goals.filter((g) => !g.done).length,
+  };
+}
+function deltaHTML(cur, prev, unit = "") {
+  if (typeof cur !== "number" || typeof prev !== "number" || (!cur && !prev)) return "";
+  const d = round1(cur - prev);
+  if (!d) return `<span class="delta">same as before</span>`;
+  return `<span class="delta ${d > 0 ? "up" : "down"}">${d > 0 ? "▲ +" : "▼ "}${d}${unit} vs previous</span>`;
+}
+function buckets(period, r) {
+  const out = [];
+  if (period === "year") {
+    for (let m = 0; m < 12; m++) { const s = ymd(new Date(r.s.getFullYear(), m, 1, 12)), e = ymd(new Date(r.s.getFullYear(), m + 1, 0, 12)); out.push({ s, e, label: new Date(r.s.getFullYear(), m, 1).toLocaleDateString(undefined, { month: "narrow" }) }); }
+  } else {
+    for (let d = new Date(r.s), i = 0; ymd(d) <= r.end; d = addDays(d, 1), i++) {
+      const k = ymd(d);
+      out.push({ s: k, e: k, label: period === "week" ? d.toLocaleDateString(undefined, { weekday: "narrow" }) : (i === 0 || (i + 1) % 5 === 0 ? String(d.getDate()) : "") });
+    }
+  }
+  return out;
+}
+function chartHTML(period, r) {
+  const areas = ["gym", "study", "work"];
+  const data = buckets(period, r).map((b) => {
+    const v = {}; for (const a of areas) v[a] = sum(state.entries.filter((x) => x.area === a && x.date >= b.s && x.date <= b.e), (x) => x.minutes);
+    return { ...b, v, total: areas.reduce((t, a) => t + v[a], 0) };
+  });
+  const max = Math.max(...data.map((d) => d.total), 0);
+  if (!max) return `<p class="empty">No timed activity in this period yet. Study, work and gym minutes show up here.</p>`;
+  return `<div class="legend">${areas.map((a) => `<span class="a-${a}"><i></i>${AREA_LABEL[a]}</span>`).join("")}<span class="num">top: ${round1(max / 60)} h</span></div>
+    <div class="chart">${data.map((d) => `<div class="col" title="${esc(d.s === d.e ? fmtDate(d.s) : d.label)}: ${round1(d.total / 60)} h">${areas.filter((a) => d.v[a]).map((a) => `<span class="a-${a}" style="background:var(--c);height:${(d.v[a] / max) * 100}%"></span>`).join("")}</div>`).join("")}</div>
+    <div class="xl">${data.map((d) => `<span>${esc(d.label)}</span>`).join("")}</div>`;
+}
+function reportMarkdown(label, st, ai) {
+  const L = [`# Life report: ${label}`, "", "## Numbers",
+    `- Active days: ${st.activeDays}`,
+    `- Gym: ${st.gym.days} training days, ${st.gym.exercises} exercises, ${st.gym.volume} kg total volume`,
+    `- Study: ${st.study.hours} h in ${st.study.sessions} sessions${st.study.subjects.length ? " (" + st.study.subjects.map((s) => `${s.subject} ${s.hours} h`).join(", ") + ")" : ""}`,
+    `- Work: ${st.work.hours} h, ${st.work.done} of ${st.work.tasks} tasks done`,
+    `- Health: ${st.health.sleep ?? "–"} h sleep and ${st.health.water ?? "–"} glasses of water on average`,
+    `- Mood: ${st.mood.avg ?? "–"} / 5 on average`];
+  if (st.gym.prs.length) L.push("", "## Personal records", ...st.gym.prs.map((p) => "- " + p));
+  if (st.goalsDone.length) L.push("", "## Goals completed", ...st.goalsDone.map((g) => "- " + g));
+  if (ai) L.push("", "## Summary", ai);
+  return L.join("\n") + "\n";
+}
+
+views.reports = {
+  html() {
+    return `<section class="area-head">${head(APPS.find((a) => a.id === "reports")).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="card"><div class="rep-bar">
+        <div class="seg" role="group" aria-label="Report period">${Object.keys(PERIOD_NOUN).map((p) => `<button type="button" data-rep-period="${p}" aria-pressed="false">${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}</div>
+        <div class="rep-nav"><button type="button" class="navbtn" data-rep-nav="-1" aria-label="Previous period">‹</button><b id="rep-label"></b><button type="button" class="navbtn" data-rep-nav="1" aria-label="Next period">›</button></div>
+      </div></div>
+      <div class="tiles" id="rep-tiles"></div>
+      <div class="two">
+        <div class="card"><h2 id="rep-chart-title">Time spent</h2><div id="rep-chart"></div></div>
+        <div class="card"><h2>Highlights</h2><div id="rep-hl"></div></div>
+      </div>
+      <div class="card a-coach"><div class="card-head"><h2>AI report</h2><div class="btns"><button type="button" class="btn" data-rep-ai>Write my report</button><button type="button" class="btn ghost" data-rep-stop hidden>Stop</button><button type="button" class="btn ghost" data-rep-dl>Download</button></div></div>
+        <div class="ai-out" id="rep-ai" hidden></div><p class="muted" style="font-size:13px" id="rep-note">The AI reads this period's numbers and notes, then writes your wins, what needs attention and what to focus on next.</p></div>
+      <div class="card" id="rep-day-card" hidden><h2>Everything you logged</h2><div id="rep-day"></div></div>`;
+  },
+  bind() {},
+  refresh() {
+    const r = periodRange(rep.period, rep.offset), prev = periodRange(rep.period, rep.offset - 1);
+    const st = periodStats(r), pv = periodStats(prev);
+    const label = periodLabel(rep.period, rep.offset, r);
+    $("#rep-label").textContent = label;
+    document.querySelectorAll("[data-rep-period]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.repPeriod === rep.period)));
+    $('[data-rep-nav="1"]').disabled = rep.offset >= 0;
+    const tile = (a, l, big, unit, sub) => `<div class="tile a-${a}"><span class="lbl">${l}</span><span class="big">${esc(big)}<small>${esc(unit)}</small></span><span class="sub">${sub}</span></div>`;
+    $("#rep-tiles").innerHTML = [
+      tile("gym", "Gym", st.gym.days, st.gym.days === 1 ? "day" : "days", `${st.gym.exercises} exercises · ${st.gym.volume.toLocaleString()} kg<br>${deltaHTML(st.gym.days, pv.gym.days, " days")}`),
+      tile("study", "Study", st.study.hours, "h", `${st.study.sessions} sessions<br>${deltaHTML(st.study.hours, pv.study.hours, " h")}`),
+      tile("work", "Work", st.work.hours, "h", `${st.work.done} of ${st.work.tasks} tasks done<br>${deltaHTML(st.work.hours, pv.work.hours, " h")}`),
+      tile("health", "Sleep", st.health.sleep ?? "–", "h avg", `${st.health.water !== null ? st.health.water + " glasses water / day" : "no water logged"}<br>${deltaHTML(st.health.sleep, pv.health.sleep, " h")}`),
+      tile("mood", "Mood", st.mood.avg ?? "–", "/ 5", `${st.mood.best ? "best: " + esc(fmtDate(st.mood.best.d)) : "no moods logged"}<br>${deltaHTML(st.mood.avg, pv.mood.avg)}`),
+      tile("goals", "Goals", st.goalsDone.length, "done", `${st.goalsOpen} still open`),
+    ].join("");
+    const isDay = rep.period === "day";
+    $("#rep-chart-title").textContent = isDay ? "Time spent" : rep.period === "year" ? "Hours per month" : "Hours per day";
+    if (isDay) {
+      const areas = ["gym", "study", "work"].map((a) => ({ k: AREA_LABEL[a], v: sum(state.entries.filter((x) => x.area === a && x.date === r.start), (x) => x.minutes), a }));
+      $("#rep-chart").innerHTML = areas.some((x) => x.v) ? barsHTML(areas.filter((x) => x.v).map((x) => ({ k: x.k, v: x.v, label: x.v >= 60 ? `${round1(x.v / 60)} h` : `${x.v} min` })), "") : `<p class="empty">No timed activity this day.</p>`;
+    } else $("#rep-chart").innerHTML = chartHTML(rep.period, r);
+    const hl = [];
+    for (const p of st.gym.prs.slice(0, 5)) hl.push(["gym", "🏆 New PR: " + p]);
+    if (st.study.subjects[0]) hl.push(["study", `Most studied: ${st.study.subjects[0].subject} (${st.study.subjects[0].hours} h)`]);
+    for (const g of st.goalsDone) hl.push(["goals", "Goal completed: " + g]);
+    if (st.mood.best && st.mood.worst) hl.push(["mood", `Best day ${fmtDate(st.mood.best.d)} (${round1(st.mood.best.v)}/5), hardest ${fmtDate(st.mood.worst.d)} (${round1(st.mood.worst.v)}/5)`]);
+    if (!isDay) { const days = Math.round((Math.min(r.e.getTime(), Date.now()) - r.s.getTime()) / 86400000) + 1; if (days > 0) hl.push(["other", `Logged something on ${st.activeDays} of ${days} days`]); }
+    $("#rep-hl").innerHTML = hl.length ? `<ul class="hl">${hl.map(([a, t]) => `<li class="a-${a}">${esc(t)}</li>`).join("")}</ul>` : `<p class="empty">Nothing logged in this period yet.</p>`;
+    const key = rep.period + ":" + r.start, out = $("#rep-ai");
+    if (!rep.ctl) { out.hidden = !rep.ai[key]; out.innerHTML = rep.ai[key] ? mdLite(rep.ai[key]) : ""; }
+    $("#rep-day-card").hidden = !isDay;
+    if (isDay) $("#rep-day").innerHTML = listHTML(state.entries.filter((x) => x.date === r.start), { showArea: true, limit: 100, empty: "Nothing logged this day." });
+  },
+};
+
+async function writeReport() {
+  if (rep.ctl) return;
+  const out = $("#rep-ai"); if (!out) return;
+  const sample = await getSample();
+  out.hidden = false;
+  if (!sample) { out.textContent = "The AI report only works when this page is opened on claude.ai. The numbers above still work everywhere."; return; }
+  const period = rep.period, r = periodRange(period, rep.offset), key = period + ":" + r.start;
+  const st = periodStats(r), pv = periodStats(periodRange(period, rep.offset - 1));
+  const notes = sorted(state.entries.filter((x) => x.date >= r.start && x.date <= r.end && x.details)).slice(0, 40).map((x) => `${x.date} [${x.area}] ${x.title}: ${x.details}`).join("\n");
+  const ctl = new AbortController(); rep.ctl = ctl;
+  out.classList.add("thinking"); out.textContent = "Writing your report…";
+  $("[data-rep-stop]").hidden = false; $("[data-rep-ai]").disabled = true;
+  const prompt = `Write the user's personal ${PERIOD_NOUN[period]}ly life report for ${periodLabel(period, rep.offset, r)} (${r.start} to ${r.end}). Today is ${today()}.
+This period's numbers: ${JSON.stringify(st)}
+Previous ${PERIOD_NOUN[period]} for comparison: ${JSON.stringify(pv)}
+Open goals: ${state.goals.filter((g) => !g.done).map((g) => g.text).join("; ") || "none"}
+Notes they wrote this period:
+${notes || "none"}
+
+Write it like a supportive but honest coach, using only these facts. Structure, with each title on its own line:
+Overview:
+(2-3 sentences)
+Wins:
+- ...
+Needs attention:
+- ...
+Focus for next ${PERIOD_NOUN[period]}:
+- 3 concrete, specific actions
+Plain text, bullets start with "- ", under 250 words. If almost nothing was logged, say so kindly and focus on how to start tracking.`;
+  const live = () => rep.ctl === ctl && $("#rep-ai") === out;
+  try {
+    const res = await sample(prompt, { signal: ctl.signal, onText: ({ text }) => { if (live()) { out.classList.remove("thinking"); out.innerHTML = mdLite(text); } } });
+    rep.ai[key] = res.text;
+    if (live()) { out.classList.remove("thinking"); out.innerHTML = mdLite(res.text); }
+  } catch (e) {
+    if (live()) { out.classList.remove("thinking"); out.innerHTML = e && e.code === "cancelled" ? (e.text ? mdLite(e.text) : "Stopped.") : esc(coachError(e && e.code)); }
+  } finally {
+    if (rep.ctl === ctl) { rep.ctl = null; const s = $("[data-rep-stop]"); if (s) s.hidden = true; const b = $("[data-rep-ai]"); if (b) b.disabled = false; }
+  }
+}
+
+async function downloadReport() {
+  const r = periodRange(rep.period, rep.offset), label = periodLabel(rep.period, rep.offset, r).replace(/^(This|Last) week · /, "");
+  const md = reportMarkdown(label, periodStats(r), rep.ai[rep.period + ":" + r.start]);
+  let dl = null;
+  if (window.claude && typeof window.claude.use === "function") { try { dl = await window.claude.use("downloads"); } catch (e) { dl = null; } }
+  if (!dl) { toast("Downloading only works when this page is opened on claude.ai."); return; }
+  try { await dl.save({ filename: `life-report-${rep.period}-${r.start}.md`, data: md }); toast("Report saved"); }
+  catch (e) { if (!e || e.code !== "declined") toast("Couldn't save the report here."); }
+}
+
+$("#main").addEventListener("click", (ev) => {
+  const p = ev.target.closest("[data-rep-period]");
+  if (p) { rep.period = p.dataset.repPeriod; rep.offset = 0; if (rep.ctl) rep.ctl.abort(); views.reports.refresh(); return; }
+  const n = ev.target.closest("[data-rep-nav]");
+  if (n) { rep.offset = Math.min(0, rep.offset + Number(n.dataset.repNav)); if (rep.ctl) rep.ctl.abort(); views.reports.refresh(); return; }
+  if (ev.target.closest("[data-rep-ai]")) { writeReport(); return; }
+  if (ev.target.closest("[data-rep-stop]")) { if (rep.ctl) rep.ctl.abort(); return; }
+  if (ev.target.closest("[data-rep-dl]")) { downloadReport(); }
+});
+
+// ---------- Exercise demos (animated figures, drawn in-page) ----------
+const STAND = { h: [60, 20], n: [60, 30], p: [60, 60], e: [60, 46], w: [60, 62], k: [60, 84], f: [60, 108] };
+const BENCH = '<line class="prop" x1="18" y1="82" x2="94" y2="82"/><line class="prop" x1="28" y1="82" x2="28" y2="110"/><line class="prop" x1="86" y1="82" x2="86" y2="110"/>';
+const SEAT = '<line class="prop" x1="50" y1="80" x2="74" y2="80"/><line class="prop" x1="62" y1="80" x2="62" y2="110"/>';
+const PATTERNS = {
+  squat: { a: { ...STAND, e: [50, 36], w: [56, 29] }, b: { h: [50, 46], n: [54, 56], p: [76, 80], e: [46, 62], w: [52, 54], k: [54, 86], f: [60, 108] },
+    muscles: ["Quads", "Glutes", "Core"], steps: ["Feet shoulder-width apart, brace your core", "Sit your hips back and down, knees over toes", "Drive up through your whole foot"] },
+  hinge: { a: { ...STAND, w: [61, 62] }, b: { h: [34, 44], n: [42, 50], p: [66, 60], e: [42, 66], w: [43, 82], k: [64, 84], f: [60, 108] },
+    muscles: ["Hamstrings", "Glutes", "Lower back"], steps: ["Weight close to your legs, soft knees", "Push your hips back with a flat back", "Squeeze your glutes to stand tall"] },
+  bench: { a: { h: [22, 72], n: [32, 75], p: [72, 76], k: [90, 84], f: [96, 108], e: [26, 84], w: [32, 66] }, b: { e: [33, 58], w: [33, 42] }, props: BENCH,
+    muscles: ["Chest", "Front shoulders", "Triceps"], steps: ["Squeeze your shoulder blades, feet flat", "Lower to mid-chest with control", "Press up until your arms are straight"] },
+  ohp: { a: { ...STAND, e: [48, 38], w: [54, 26] }, b: { e: [57, 14], w: [58, -2] },
+    muscles: ["Shoulders", "Triceps", "Upper chest"], steps: ["Brace your core and squeeze your glutes", "Press straight up past your face", "Lock out overhead, lower slowly"] },
+  row: { a: { h: [32, 40], n: [40, 46], p: [70, 56], k: [66, 82], f: [62, 108], e: [41, 62], w: [42, 78] }, b: { e: [58, 44], w: [50, 58] },
+    muscles: ["Upper back", "Lats", "Biceps"], steps: ["Hinge forward with a flat back", "Pull your elbows back toward your hips", "Squeeze your shoulder blades, lower slowly"] },
+  pulldown: { a: { h: [56, 34], n: [58, 44], p: [62, 74], k: [84, 76], f: [86, 104], e: [56, 28], w: [54, 12] }, b: { e: [50, 58], w: [54, 42] }, props: SEAT, anchor: [54, -12],
+    muscles: ["Lats", "Upper back", "Biceps"], steps: ["Grip a bit wider than your shoulders", "Pull your elbows down to your sides", "Control the weight back up"] },
+  curl: { a: { ...STAND, e: [61, 46], w: [63, 62] }, b: { w: [70, 32] }, dur: 2.2,
+    muscles: ["Biceps", "Forearms"], steps: ["Elbows pinned at your sides", "Curl up without swinging", "Lower slowly all the way down"] },
+  raise: { a: { ...STAND, e: [61, 46], w: [62, 62] }, b: { e: [74, 36], w: [88, 31] },
+    muscles: ["Shoulders"], steps: ["Slight bend in your elbows", "Raise to shoulder height", "Lower slowly, don't swing"] },
+  triceps: { a: { ...STAND, e: [62, 46], w: [74, 36] }, b: { w: [66, 62] }, anchor: [80, -12], dur: 2.2,
+    muscles: ["Triceps"], steps: ["Elbows fixed at your sides", "Push until your arms are straight", "Let it come back up with control"] },
+  lunge: { a: { ...STAND, k2: [60, 84], f2: [60, 108] }, b: { h: [60, 36], n: [60, 46], p: [60, 76], e: [60, 62], w: [60, 78], k: [80, 82], f: [82, 108], k2: [48, 98], f2: [34, 107] },
+    muscles: ["Quads", "Glutes", "Balance"], steps: ["Step forward and drop your back knee straight down", "Keep your front knee over your foot", "Push through your front heel to come back"] },
+  pushup: { a: { h: [24, 62], n: [32, 66], p: [68, 86], k: [86, 96], f: [104, 106], e: [32, 86], w: [32, 106] }, b: { h: [24, 92], n: [32, 95], p: [68, 100], k: [86, 103], e: [44, 94] },
+    muscles: ["Chest", "Triceps", "Core"], steps: ["Hands under your shoulders, body in a straight line", "Lower your chest close to the floor", "Push the floor away"] },
+  plank: { a: { h: [24, 80], n: [32, 84], p: [68, 92], k: [86, 99], f: [104, 106], e: [32, 106], w: [46, 106] }, b: { p: [68, 89], k: [86, 98] }, dur: 3,
+    muscles: ["Core", "Shoulders"], steps: ["Elbows under your shoulders", "Straight line from head to heels", "Squeeze your glutes and keep breathing"] },
+  calf: { a: { ...STAND }, b: { h: [60, 14], n: [60, 24], p: [60, 54], e: [60, 40], w: [60, 56], k: [60, 78], f: [60, 103] }, dur: 1.8,
+    muscles: ["Calves"], steps: ["Stand tall on the balls of your feet", "Rise up as high as you can", "Pause, then lower slowly"] },
+  legMachine: { a: { h: [46, 40], n: [50, 50], p: [56, 80], e: [56, 64], w: [62, 78], k: [80, 82], f: [80, 106] }, b: { f: [102, 74] },
+    props: '<line class="prop" x1="40" y1="86" x2="80" y2="86"/><line class="prop" x1="42" y1="86" x2="38" y2="44"/><line class="prop" x1="60" y1="86" x2="60" y2="110"/>',
+    muscles: ["Quads / hamstrings"], steps: ["Line your knees up with the machine's pivot", "Move with control, no jerking", "Pause at the end, lower slowly"] },
+  pullH: { a: { ...STAND, e: [74, 32], w: [90, 30] }, b: { e: [48, 30], w: [60, 22] }, anchor: [124, 30],
+    muscles: ["Rear shoulders", "Upper back"], steps: ["Pull the rope toward your face", "Keep your elbows high and wide", "Squeeze, then return slowly"] },
+  bridge: { a: { h: [18, 100], n: [26, 102], p: [60, 104], k: [78, 86], f: [86, 107], e: [40, 105], w: [54, 106] }, b: { n: [26, 100], p: [58, 84], k: [78, 80], e: [40, 103] },
+    muscles: ["Glutes", "Hamstrings"], steps: ["Feet flat, knees bent", "Drive your hips up and squeeze your glutes", "Lower with control"] },
+  core: { a: { h: [22, 98], n: [30, 100], p: [64, 104], k: [80, 86], f: [94, 104], e: [26, 90], w: [20, 94] }, b: { h: [34, 82], n: [40, 88], e: [32, 80], w: [27, 85] },
+    muscles: ["Abs"], steps: ["Press your lower back into the floor", "Curl up using your abs", "Lower slowly, don't pull on your neck"] },
+};
+const PATTERN_RULES = [
+  [/leg (press|extension|curl)|hamstring curl/, "legMachine"], [/calf/, "calf"], [/lunge|split squat|step.?up/, "lunge"], [/squat|goblet/, "squat"],
+  [/deadlift|\brdl\b|romanian|good morning|hinge|swing|hyperextension/, "hinge"], [/push.?up/, "pushup"], [/plank|hold/, "plank"], [/bridge|hip thrust/, "bridge"],
+  [/crunch|sit.?up|leg raise|knee raise|\bab\b/, "core"], [/face pull|rear delt|reverse fly/, "pullH"], [/pulldown|pull.?up|chin.?up|lat pull/, "pulldown"],
+  [/row|pullover/, "row"], [/tricep|pushdown|skull|\bdip|kickback/, "triceps"], [/curl/, "curl"], [/overhead|shoulder press|military|pike|arnold/, "ohp"],
+  [/bench|chest press|floor press|incline|decline/, "bench"], [/raise|fly|crossover|pec deck/, "raise"],
+];
+const patternFor = (name) => { const n = String(name || "").toLowerCase(); for (const [re, p] of PATTERN_RULES) if (re.test(n)) return p; return null; };
+function equipFor(name, pat) {
+  const n = String(name || "").toLowerCase();
+  if (["pushup", "plank", "bridge", "core", "legMachine"].includes(pat) || /bodyweight|pull.?up|chin|inverted|pike|\bdip|push.?up/.test(n)) return "none";
+  if (/cable|pulldown|pushdown|face pull|lat pull|seated row|crossover|rope/.test(n)) return "cable";
+  if (/dumbbell|\bdb\b|goblet|kettlebell|hammer|lateral|raise|fly|curl|lunge|calf/.test(n)) return "db";
+  return ["squat", "hinge", "bench", "ohp", "row"].includes(pat) ? "barbell" : "none";
+}
+const REDUCED_MOTION = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } })();
+function figSVG(pat, eq) {
+  const P = PATTERNS[pat];
+  const A = { ...P.a }, B = { ...P.a, ...(P.b || {}) };
+  for (const X of [A, B]) { X.k2 = X.k2 || X.k; X.f2 = X.f2 || X.f; }
+  const ks = `dur="${P.dur || 2.6}s" repeatCount="indefinite" keyTimes="0;.5;1" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1"`;
+  const pts = (X, keys) => keys.map((k) => X[k].join(",")).join(" ");
+  const anim = (attr, a, b) => (REDUCED_MOTION ? "" : `<animate attributeName="${attr}" values="${a};${b};${a}" ${ks}/>`);
+  const line = (keys, cls) => `<polyline class="${cls}" points="${pts(A, keys)}">${anim("points", pts(A, keys), pts(B, keys))}</polyline>`;
+  const dot = (k, extra) => `<circle cx="${A[k][0]}" cy="${A[k][1]}" ${extra}>${anim("cx", A[k][0], B[k][0])}${anim("cy", A[k][1], B[k][1])}</circle>`;
+  let gear = "";
+  if (eq === "barbell") gear = dot("w", 'r="8.5" class="eq"');
+  else if (eq === "db") gear = dot("w", 'r="4.5" class="eq"');
+  else if (eq === "cable" && P.anchor) gear = `<line class="cable" x1="${P.anchor[0]}" y1="${P.anchor[1]}" x2="${A.w[0]}" y2="${A.w[1]}">${anim("x2", A.w[0], B.w[0])}${anim("y2", A.w[1], B.w[1])}</line>` + dot("w", 'r="3" class="eq"');
+  return `<svg viewBox="-5 -14 130 130" role="img" aria-label="Animated demo of the movement">${P.props || ""}<line class="ground" x1="-5" y1="111" x2="125" y2="111"/>${line(["p", "k2", "f2"], "body far")}${line(["n", "p"], "body")}${line(["p", "k", "f"], "body")}${line(["n", "e", "w"], "body")}${dot("h", 'r="7" class="head"')}${gear}</svg>`;
+}
+// Exercise photo library (public-domain free-exercise-db), published next to this page as exlib.json + ex/*.jpg
+let EXLIB = null, exlibState = "loading";
+const libByName = new Map(), libCache = new Map();
+const LIB_ALIAS = {
+  "bench press": "Barbell Bench Press - Medium Grip", "incline bench press": "Barbell Incline Bench Press - Medium Grip", "overhead press": "Standing Military Press",
+  "military press": "Standing Military Press", "lateral raise": "Side Lateral Raise", "barbell row": "Bent Over Barbell Row", "lat pulldown": "Wide-Grip Lat Pulldown",
+  "seated cable row": "Seated Cable Rows", "biceps curl": "Barbell Curl", "bicep curl": "Barbell Curl", "squat": "Barbell Squat", "back squat": "Barbell Squat",
+  "leg curl": "Lying Leg Curls", "calf raise": "Standing Calf Raises", "dumbbell calf raise": "Standing Calf Raises", "push-up": "Pushups", "push up": "Pushups",
+  "diamond push-up": "Pushups", "pike push-up": "Pushups", "overhead dumbbell triceps extension": "Standing Dumbbell Triceps Extension", "rear delt fly": "Reverse Flyes",
+  "dumbbell curl": "Dumbbell Bicep Curl", "hammer curl": "Hammer Curls", "dumbbell romanian deadlift": "Stiff-Legged Dumbbell Deadlift", "dumbbell lunge": "Dumbbell Lunges",
+  "plank": "Plank", "reverse lunge": "Dumbbell Rear Lunge", "glute bridge": "Single Leg Glute Bridge", "bulgarian split squat": "Split Squat with Dumbbells",
+  "lying leg raise": "Flat Bench Lying Leg Raise", "deadlift": "Barbell Deadlift", "pull-up": "Pullups", "pull up": "Pullups", "pull-up or inverted row": "Pullups",
+  "chin-up": "Chin-Up", "leg extension": "Leg Extensions", "dips": "Dips - Triceps Version", "crunch": "Crunches", "hip thrust": "Barbell Hip Thrust",
+  "lunge": "Dumbbell Lunges", "walking lunge": "Bodyweight Walking Lunge", "shrug": "Dumbbell Shrug", "front raise": "Front Dumbbell Raise", "skull crusher": "Lying Triceps Press",
+};
+const LIB_STOP = new Set(["the", "a", "with", "and", "on", "to", "of", "medium", "grip", "version", "or"]);
+const libTokens = (s) => String(s || "").toLowerCase().replace(/\(.*?\)/g, " ").replace(/\b(push|pull|chin|sit|step)[\s-]+ups?\b/g, "$1up").replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/)
+  .filter((t) => t && !LIB_STOP.has(t)).map((t) => (t.length > 4 ? t.replace(/(es|s)$/, "") : t));
+function loadLib() {
+  fetch("exlib.json").then((r) => (r.ok ? r.json() : null)).then((j) => {
+    if (!Array.isArray(j)) { exlibState = "missing"; return; }
+    EXLIB = j; exlibState = "ready";
+    for (const x of j) { x._t = libTokens(x.name); libByName.set(x.name.toLowerCase(), x); }
+  }).catch(() => { exlibState = "missing"; }).finally(() => { libCache.clear(); changed(); if (current === "gym") paintLibrary(); });
+}
+function libFor(name) {
+  if (!EXLIB) return null;
+  const key = exKey(name).replace(/\s*\(.*?\)\s*/g, " ").trim();
+  if (libCache.has(key)) return libCache.get(key);
+  let hit = libByName.get(key) || libByName.get(String(LIB_ALIAS[key] || "").toLowerCase()) || null;
+  if (!hit) {
+    const q = libTokens(name); let best = null, bs = 0;
+    if (q.length) for (const x of EXLIB) {
+      const inter = q.filter((w) => x._t.includes(w)).length; if (!inter) continue;
+      const s = inter / q.length - 0.03 * Math.max(0, x._t.length - inter);
+      if (s > bs) { bs = s; best = x; }
+    }
+    if (bs >= 0.6) hit = best;
+  }
+  libCache.set(key, hit); return hit;
+}
+const cap = (s) => String(s || "").replace(/^\w/, (c) => c.toUpperCase());
+
+const openDemos = new Set();
+function demoHTML(name, notes) {
+  const L = libFor(name), k = exKey(name), open = openDemos.has(k) ? "open" : "";
+  if (L) {
+    return `<details class="howto" ${open}><summary data-demo="${esc(k)}">How to do it</summary>
+      <div class="demo photo">
+        <div class="ph"><img src="${esc(L.images[0])}" alt="${esc(L.name)}, start position" loading="lazy">${L.images[1] ? `<img class="b" src="${esc(L.images[1])}" alt="${esc(L.name)}, end position" loading="lazy">` : ""}<span class="phl a">1 · Start</span>${L.images[1] ? `<span class="phl b">2 · Finish</span>` : ""}</div>
+        <div class="demo-info">
+          <div class="btns">${L.level ? `<span class="lvl">${esc(cap(L.level))}</span>` : ""}${L.primary.map((m) => `<span class="mpill">${esc(cap(m))}</span>`).join("")}${L.secondary.slice(0, 3).map((m) => `<span class="pill" style="margin-left:0">${esc(cap(m))}</span>`).join("")}</div>
+          <ol class="steps">${L.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+          ${notes ? `<p class="why">Tip: ${esc(notes)}</p>` : ""}
+          <a class="cal" href="${esc(yt(name + " proper form"))}" target="_blank" rel="noopener">▶ Watch the video on YouTube</a>
+          ${L.name.toLowerCase() !== k ? `<small class="muted">Photos show: ${esc(L.name)}</small>` : ""}
+        </div></div></details>`;
+  }
+  const pat = patternFor(name), P = pat && PATTERNS[pat];
+  return `<details class="howto" ${open}><summary data-demo="${esc(k)}">How to do it</summary>
+    <div class="demo">${P ? `<div class="fig">${figSVG(pat, equipFor(name, pat))}</div>` : ""}
+      <div class="demo-info">${P ? `<div class="btns">${P.muscles.map((m) => `<span class="mpill">${esc(m)}</span>`).join("")}</div><ol class="steps">${P.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : `<p class="muted">No animation for this exercise yet. The video shows the right form.</p>`}
+        ${notes ? `<p class="why">Tip: ${esc(notes)}</p>` : ""}
+        <a class="cal" href="${esc(yt(name + " proper form"))}" target="_blank" rel="noopener">▶ Watch the video on YouTube</a></div></div></details>`;
+}
+
+// Exercise library browser
+const LIB_GROUPS = { all: ["All", null], chest: ["Chest", ["chest"]], back: ["Back", ["lats", "middle back", "lower back", "traps"]], shoulders: ["Shoulders", ["shoulders"]],
+  arms: ["Arms", ["biceps", "triceps", "forearms"]], legs: ["Legs", ["quadriceps", "hamstrings", "glutes", "calves", "adductors", "abductors"]], core: ["Core", ["abdominals"]] };
+const libUi = { q: "", g: "all", n: 10 };
+function paintLibrary() {
+  const list = $("#lib-list"); if (!list) return;
+  const chips = $("#lib-groups");
+  if (chips) chips.innerHTML = Object.entries(LIB_GROUPS).map(([k, [l]]) => `<button type="button" class="chip" data-libg="${k}" aria-pressed="${libUi.g === k}">${l}</button>`).join("");
+  if (!EXLIB) { list.innerHTML = `<p class="empty">${exlibState === "loading" ? "Loading exercise photos…" : "Exercise photos load in the app on claude.ai."}</p>`; return; }
+  const q = libTokens(libUi.q), musc = LIB_GROUPS[libUi.g][1];
+  const rows = EXLIB.filter((x) => (!musc || x.primary.some((m) => musc.includes(m))) && (!q.length || q.every((w) => x._t.some((t) => t.startsWith(w)))))
+    .sort((a, b) => (a.level === "beginner" ? 0 : 1) - (b.level === "beginner" ? 0 : 1) || a.name.localeCompare(b.name));
+  $("#lib-count").textContent = `${rows.length} exercises`;
+  list.innerHTML = rows.length ? rows.slice(0, libUi.n).map((x) => `<div class="lib-ex"><img class="thumb" src="${esc(x.images[0])}" alt="" loading="lazy">
+      <div><b>${esc(x.name)}</b><small>${esc(x.primary.map(cap).join(", "))}${x.equipment ? " · " + esc(x.equipment) : ""}${x.level ? " · " + esc(x.level) : ""}</small></div>${demoHTML(x.name)}</div>`).join("")
+      + (rows.length > libUi.n ? `<div style="padding-top:10px"><button type="button" class="btn ghost" data-libmore>Show more (${rows.length - libUi.n})</button></div>` : "")
+    : `<p class="empty">No exercise found. Try another word, like “press” or “curl”.</p>`;
+}
+$("#main").addEventListener("input", (ev) => { if (ev.target.id === "lib-q") { libUi.q = ev.target.value; libUi.n = 10; paintLibrary(); } });
+$("#main").addEventListener("click", (ev) => {
+  const g = ev.target.closest("[data-libg]"); if (g) { libUi.g = g.dataset.libg; libUi.n = 10; paintLibrary(); return; }
+  if (ev.target.closest("[data-libmore]")) { libUi.n += 15; paintLibrary(); }
+});
+
+// ---------- Gym: personal plan & guided workouts ----------
+const SESSION_KEY = "lifeagent.session";
+let session = null;
+try { session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (e) { session = null; }
+const saveSession = () => { try { if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session)); else localStorage.removeItem(SESSION_KEY); } catch (e) {} };
+let planUi = "view", planCtl = null, planMsg = "", planDirty = false, gymIv = null;
+const restT = { end: 0, label: "" };
+const getPlan = () => state.plans.find((p) => p.id === "current") || null;
+const exKey = (n) => String(n || "").trim().toLowerCase();
+const exHistory = (name) => sorted(inArea("gym").filter((e) => exKey((e.data && e.data.exercise) || e.title) === exKey(name)));
+const fmtRest = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${pad(s % 60)} min` : `${s} s`);
+const repRange = (ex) => (ex.repMin === ex.repMax ? `${ex.repMin}` : `${ex.repMin}–${ex.repMax}`);
+function bestWeight(name) {
+  let b = null;
+  for (const e of exHistory(name)) {
+    const d = e.data || {};
+    for (const w of [d.weight, ...((d.setLog || []).map((s) => s.w))]) if (typeof w === "number" && (b === null || w > b)) b = w;
+  }
+  return b;
+}
+// Double progression: hit the top of the rep range on every set -> add weight; otherwise same weight, one more rep.
+function target(ex) {
+  const h = exHistory(ex.name)[0];
+  if (!h) return { w: ex.startWeight ?? null, r: ex.repMin, why: typeof ex.startWeight === "number" ? `First time: start at ${ex.startWeight} kg, adjust if it feels too easy or hard` : "First time: pick a weight you can lift with good form" };
+  const d = h.data || {};
+  const log = Array.isArray(d.setLog) && d.setLog.length ? d.setLog : [...Array(d.sets || 1)].map(() => ({ w: d.weight, r: d.reps }));
+  const lastW = typeof d.weight === "number" ? d.weight : null;
+  const reps = log.map((s) => Number(s.r) || 0);
+  if (reps.length && reps.every((r) => r >= ex.repMax)) {
+    if (lastW === null) return { w: null, r: ex.repMax + 1, why: `You hit ${ex.repMax}+ reps on every set: go for more` };
+    const inc = lastW < 20 ? 1 : 2.5;
+    return { w: round1(lastW + inc), r: ex.repMin, why: `You hit ${ex.repMax} reps on every set last time: +${inc} kg` };
+  }
+  const minR = reps.length ? Math.min(...reps) : ex.repMin;
+  return { w: lastW, r: Math.min(ex.repMax, Math.max(ex.repMin, minR + 1)), why: `${lastW !== null ? `Same ${lastW} kg as ${fmtDate(h.date)}` : `Same as ${fmtDate(h.date)}`}: aim for one more rep` };
+}
+
+function cleanPlan(raw, settings) {
+  const days = (raw && Array.isArray(raw.days) ? raw.days : []).slice(0, 7).map((d, i) => ({
+    name: String((d && d.name) || `Day ${i + 1}`).slice(0, 60),
+    focus: String((d && d.focus) || "").slice(0, 100),
+    exercises: (d && Array.isArray(d.exercises) ? d.exercises : []).slice(0, 12).filter((x) => x && x.name).map((x) => {
+      const repMin = Math.max(1, Math.round(numOrNull(x.repMin) || 8));
+      const repMax = Math.max(repMin, Math.round(numOrNull(x.repMax) || repMin));
+      const sw = numOrNull(x.startWeight);
+      return { name: String(x.name).slice(0, 60), sets: Math.min(8, Math.max(1, Math.round(numOrNull(x.sets) || 3))), repMin, repMax,
+        rest: Math.min(600, Math.max(15, Math.round(numOrNull(x.rest) || 90))), startWeight: sw !== null && sw > 0 ? sw : null, notes: String(x.notes || "").slice(0, 160) };
+    }),
+  })).filter((d) => d.exercises.length);
+  if (!days.length) return null;
+  return { id: "current", name: String((raw && raw.name) || "My plan").slice(0, 60), days, settings, nextDay: 0, created: today() };
+}
+
+const X = (name, sets, repMin, repMax, rest, notes = "") => ({ name, sets, repMin, repMax, rest, notes });
+function templatePlan(s) {
+  const T = {
+    gym: [
+      { name: "Push", focus: "Chest, shoulders, triceps", exercises: [X("Bench press", 4, 6, 10, 150, "Shoulder blades back, feet planted"), X("Overhead press", 3, 8, 12, 120), X("Incline dumbbell press", 3, 8, 12, 90), X("Lateral raise", 3, 12, 15, 60), X("Triceps pushdown", 3, 10, 15, 60)] },
+      { name: "Pull", focus: "Back, biceps", exercises: [X("Barbell row", 4, 6, 10, 120, "Flat back, pull to lower chest"), X("Lat pulldown", 3, 8, 12, 90), X("Seated cable row", 3, 8, 12, 90), X("Face pull", 3, 12, 15, 60), X("Biceps curl", 3, 10, 12, 60)] },
+      { name: "Legs", focus: "Quads, hamstrings, glutes, calves", exercises: [X("Squat", 4, 6, 10, 150, "Depth to parallel, knees track over toes"), X("Romanian deadlift", 3, 8, 12, 120), X("Leg press", 3, 10, 12, 90), X("Leg curl", 3, 10, 15, 60), X("Calf raise", 3, 12, 15, 60)] },
+    ],
+    dumbbells: [
+      { name: "Push", focus: "Chest, shoulders, triceps", exercises: [X("Dumbbell bench press", 4, 8, 12, 90), X("Dumbbell shoulder press", 3, 8, 12, 90), X("Push-up", 3, 8, 15, 60), X("Lateral raise", 3, 12, 15, 60), X("Overhead dumbbell triceps extension", 3, 10, 15, 60)] },
+      { name: "Pull", focus: "Back, biceps", exercises: [X("One-arm dumbbell row", 4, 8, 12, 90), X("Dumbbell pullover", 3, 10, 12, 75), X("Rear delt fly", 3, 12, 15, 60), X("Dumbbell curl", 3, 10, 12, 60), X("Hammer curl", 3, 10, 12, 60)] },
+      { name: "Legs", focus: "Legs and core", exercises: [X("Goblet squat", 4, 8, 12, 90), X("Dumbbell Romanian deadlift", 3, 8, 12, 90), X("Dumbbell lunge", 3, 10, 12, 75), X("Dumbbell calf raise", 3, 12, 20, 45), X("Plank (seconds)", 3, 30, 60, 45)] },
+    ],
+    bodyweight: [
+      { name: "Full body A", focus: "Push and legs", exercises: [X("Push-up", 4, 8, 15, 75), X("Bodyweight squat", 4, 12, 20, 60), X("Pike push-up", 3, 6, 12, 75), X("Reverse lunge", 3, 10, 15, 60), X("Plank (seconds)", 3, 30, 60, 45)] },
+      { name: "Full body B", focus: "Pull and core", exercises: [X("Inverted row", 4, 6, 12, 90), X("Glute bridge", 4, 12, 20, 60), X("Diamond push-up", 3, 6, 12, 75), X("Bulgarian split squat", 3, 8, 12, 75), X("Lying leg raise", 3, 10, 15, 45)] },
+    ],
+  };
+  const base = T[s.equipment] || T.gym;
+  const days = [...Array(Math.max(1, s.days))].map((_, i) => base[i % base.length]).map((d, i, arr) => ({ ...d, name: arr.length > base.length ? `${d.name} ${Math.floor(i / base.length) + 1}` : d.name }));
+  return cleanPlan({ name: `${s.days}-day ${s.equipment === "bodyweight" ? "bodyweight" : s.equipment === "dumbbells" ? "dumbbell" : "gym"} plan`, days }, s);
+}
+
+const GOALS = { muscle: "Build muscle", strength: "Get stronger", fatloss: "Lose fat", fitness: "General fitness" };
+const EQUIP = { gym: "Full gym", dumbbells: "Dumbbells only", bodyweight: "Bodyweight / no equipment" };
+const LEVELS = { beginner: "Beginner (under 1 year)", intermediate: "Intermediate (1–3 years)", advanced: "Advanced (3+ years)" };
+const sel = (id, label, opts, v) => `<label for="${id}">${label}<select id="${id}">${Object.entries(opts).map(([k, t]) => `<option value="${esc(k)}" ${String(k) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
+
+async function buildPlanAI(settings, feedback) {
+  const sample = await getSample();
+  if (!sample) { planMsg = "AI isn't available here, so this is a standard plan. Open the app on claude.ai to personalize it."; return templatePlan(settings); }
+  const names = [...new Set(inArea("gym").map((e) => (e.data && e.data.exercise) || e.title))];
+  const prs = names.map((n) => [n, bestWeight(n)]).filter(([, w]) => w !== null).slice(0, 25).map(([n, w]) => `${n}: ${w} kg`).join("; ");
+  const recent = sorted(recentIn("gym", 30)).slice(0, 40).map((e) => `${e.date} ${e.title} ${entryMeta(e)}`).join("\n");
+  const cur = getPlan();
+  const prompt = `You are an experienced strength coach. Build a personal weekly gym plan for one person.
+Goal: ${GOALS[settings.goal]}. Sessions per week: ${settings.days}. Time per session: about ${settings.minutes} minutes. Equipment: ${EQUIP[settings.equipment]}. Level: ${LEVELS[settings.level]}.
+Their notes (injuries, likes, dislikes): ${settings.notes || "none"}
+Their best weights so far: ${prs || "no history yet"}
+Recent gym log (30 days):
+${recent || "none"}
+${feedback && cur ? `Their current plan: ${JSON.stringify(cur.days)}\nChange it based on this feedback: ${feedback}` : ""}
+${EXLIB ? `The app has photos and instructions for these exercises; prefer them and use their exact names: ${EXLIB.map((x) => x.name).join("; ")}\n` : ""}${settings.level === "beginner" ? "They are a beginner: choose simple, safe, machine/dumbbell-friendly exercises and keep it easy to follow.\n" : ""}Rules: exactly ${settings.days} sessions, in the order to do them in the week, balanced across muscle groups. Each session must fit about ${settings.minutes} minutes including rest. Only exercises possible with their equipment, and respect their injuries. Use common English exercise names; when an exercise is already in their log, reuse that exact name so progress tracking matches. For timed holds, put "(seconds)" in the name and use seconds as reps. startWeight in kg: base it on their best weights when known, otherwise a conservative safe guess for their level, or null for bodyweight exercises. rest is in seconds. notes is one short form cue.
+Reply with only JSON: {"name": string, "days": [{"name": string, "focus": string, "exercises": [{"name": string, "sets": number, "repMin": number, "repMax": number, "rest": number, "startWeight": number or null, "notes": string}]}]}`;
+  const raw = await sample.json(prompt, { signal: planCtl.signal, cache: false });
+  const p = cleanPlan(raw, settings);
+  if (!p) throw { code: "invalid_json" };
+  return p;
+}
+
+function paintPlan() {
+  const card = $("#plan-card"); if (!card) return;
+  if (session) return paintSession(card);
+  const plan = getPlan();
+  if (!plan || planUi === "setup") return paintSetup(card, plan);
+  const idx = Math.min(plan.nextDay || 0, plan.days.length - 1), day = plan.days[idx];
+  const trainedThisWeek = new Set(recentIn("gym", 7).map((e) => e.date)).size;
+  card.innerHTML = `<div class="card-head"><div><span class="eyebrow">Next workout · ${esc(plan.name)} · ${trainedThisWeek}/${esc((plan.settings && plan.settings.days) || plan.days.length)} this week</span><h2 class="plan-title">${esc(day.name)}</h2><p class="muted">${esc(day.focus)}</p></div>
+      ${plan.days.length > 1 ? `<label for="plan-day">Choose day<select id="plan-day">${plan.days.map((d, i) => `<option value="${i}" ${i === idx ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></label>` : ""}</div>
+    <div class="plan-list">${day.exercises.map((ex) => { const t = target(ex); return `<div class="plan-ex"><b>${esc(ex.name)}</b><span class="num">${ex.sets} × ${repRange(ex)}${typeof t.w === "number" ? ` · ${t.w} kg` : ""}</span><small class="muted">${esc(t.why)} · rest ${esc(fmtRest(ex.rest))}</small>${demoHTML(ex.name, ex.notes)}</div>`; }).join("")}</div>
+    <div class="btns"><button type="button" class="btn" data-plan="start">Start workout</button><button type="button" class="btn ghost" data-plan="setup">Change plan</button></div>
+    ${planMsg ? `<p class="muted" style="font-size:13px">${esc(planMsg)}</p>` : ""}`;
+}
+
+function paintSetup(card, plan) {
+  planDirty = false;
+  const s = (plan && plan.settings) || { goal: "muscle", days: 3, minutes: 60, equipment: "gym", level: "beginner", notes: "" };
+  const busy = !!planCtl;
+  card.innerHTML = `<div class="card-head"><div><span class="eyebrow">Your personal training plan</span><h2 class="plan-title">${plan ? "Change your plan" : "Build your plan"}</h2><p class="muted">Tell me about yourself. Every session, the app gives you the exercises, your weights and rest times, and adds weight when you're ready.</p></div></div>
+    <form id="plan-form" class="link-form">
+      <div class="row">${sel("pl-goal", "Goal", GOALS, s.goal)}${sel("pl-days", "Days per week", { 2: "2", 3: "3", 4: "4", 5: "5", 6: "6" }, s.days)}${sel("pl-min", "Minutes per session", { 30: "30", 45: "45", 60: "60", 75: "75", 90: "90" }, s.minutes)}</div>
+      <div class="row">${sel("pl-eq", "Equipment", EQUIP, s.equipment)}${sel("pl-level", "Experience", LEVELS, s.level)}</div>
+      <label for="pl-notes">Injuries, likes, dislikes<textarea id="pl-notes" rows="2" placeholder="Bad left knee. Love bench press. Want bigger arms.">${esc(s.notes)}</textarea></label>
+      ${plan ? `<label for="pl-feedback">What should change? (optional)<input id="pl-feedback" placeholder="Shorter sessions, more arms, no deadlifts" autocomplete="off"></label>` : ""}
+      <div class="btns"><button class="btn" id="pl-ai" ${busy ? "disabled" : ""}>${busy ? "Building…" : "Build my plan with AI"}</button>
+        <button type="button" class="btn ghost" data-plan="template" ${busy ? "disabled" : ""}>Use a standard plan</button>
+        ${busy ? `<button type="button" class="btn ghost" data-plan="stop">Stop</button>` : plan ? `<button type="button" class="btn ghost" data-plan="cancel">Cancel</button>` : ""}</div>
+      <p class="muted" style="font-size:13px">${esc(busy ? "Building your plan. This can take up to a minute." : planMsg)}</p>
+    </form>`;
+}
+
+function readSettings() {
+  return { goal: val("pl-goal") || "muscle", days: Number(val("pl-days")) || 3, minutes: Number(val("pl-min")) || 60, equipment: val("pl-eq") || "gym", level: val("pl-level") || "beginner", notes: val("pl-notes") };
+}
+
+function paintSession(card) {
+  const total = sum(session.ex, (x) => x.sets.length), done = sum(session.ex, (x) => x.sets.filter((s) => s.done).length);
+  card.innerHTML = `<div class="card-head"><div><span class="eyebrow">Workout in progress · <span class="num" id="ses-clock"></span></span><h2 class="plan-title">${esc(session.dayName)}</h2></div><span class="num muted">${done}/${total} sets</span></div>
+    <div class="ses-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${total ? (100 * done) / total : 0}%"></span></div>
+    <div class="rest" id="rest" hidden></div>
+    ${session.ex.map((ex, i) => `<div class="ses-ex"><div class="ses-head"><b>${esc(ex.name)}</b>
+        <small class="muted">${esc(repRange(ex))} reps · rest ${esc(fmtRest(ex.rest))}${ex.best !== null ? ` · best ${ex.best} kg` : ""}</small>
+        <small class="why">${esc(ex.why)}</small></div>
+      <div class="sets"><div class="set-labels"><span>Set</span><span>kg</span><span>Reps</span><span></span></div>
+      ${ex.sets.map((s, j) => `<div class="set ${s.done ? "done" : ""}"><span class="num muted">${j + 1}</span>
+        <div class="stp"><button type="button" data-step="${i}.${j}.w.-1" aria-label="Less weight">−</button><input type="number" inputmode="decimal" step="0.5" min="0" data-sw="${i}.${j}" value="${esc(s.w)}" placeholder="kg" aria-label="${esc(ex.name)} set ${j + 1} weight"><button type="button" data-step="${i}.${j}.w.1" aria-label="More weight">+</button></div>
+        <div class="stp"><button type="button" data-step="${i}.${j}.r.-1" aria-label="One rep less">−</button><input type="number" inputmode="numeric" min="0" data-sr="${i}.${j}" value="${esc(s.r)}" aria-label="${esc(ex.name)} set ${j + 1} reps"><button type="button" data-step="${i}.${j}.r.1" aria-label="One rep more">+</button></div>
+        <button type="button" class="tick" data-tick="${i}.${j}" aria-pressed="${s.done}">${s.done ? "✓" : "Done"}</button></div>`).join("")}
+      <div><button type="button" class="cal linkbtn" data-addset="${i}">+ Add set</button></div></div>${demoHTML(ex.name, ex.notes)}</div>`).join("")}
+    <div class="btns"><button type="button" class="btn" data-plan="finish">Finish & save</button><button type="button" class="btn ghost" data-plan="discard">Discard workout</button></div>`;
+  tickGym();
+}
+
+function startSession() {
+  const plan = getPlan(); if (!plan) return;
+  const idx = Math.min(plan.nextDay || 0, plan.days.length - 1), day = plan.days[idx];
+  session = { dayIndex: idx, dayName: day.name, started: Date.now(), ex: day.exercises.map((ex) => {
+    const t = target(ex);
+    return { name: ex.name, rest: ex.rest, repMin: ex.repMin, repMax: ex.repMax, notes: ex.notes, why: t.why, best: bestWeight(ex.name),
+      sets: [...Array(ex.sets)].map(() => ({ w: typeof t.w === "number" ? t.w : "", r: t.r, done: false })) };
+  }) };
+  if (session.ex[0]) openDemos.add(exKey(session.ex[0].name)); // beginners: show how to do the first exercise right away
+  saveSession(); beep(0); paintPlan(); startGymClock();
+  const c = $("#plan-card"); if (c && c.scrollIntoView) c.scrollIntoView({ block: "start" });
+}
+
+function startGymClock() { clearInterval(gymIv); gymIv = setInterval(tickGym, 500); tickGym(); }
+function tickGym() {
+  if (!session) { clearInterval(gymIv); return; }
+  const c = $("#ses-clock"); if (c) c.textContent = fmtTimer(Date.now() - session.started).replace(/^(\d+):/, (m, a) => (a >= 60 ? `${Math.floor(a / 60)}:${pad(a % 60)}:` : m));
+  const r = $("#rest"); if (!r) return;
+  if (restT.end) {
+    const left = restT.end - Date.now();
+    if (left <= 0) { restT.end = 0; beep(2); r.hidden = false; r.dataset.label = ""; r.innerHTML = `<span>Rest over. Go: ${esc(restT.label)}!</span>`; setTimeout(() => { if (!restT.end) { const x = $("#rest"); if (x) x.hidden = true; } }, 4000); }
+    else {
+      r.hidden = false;
+      const t = r.querySelector(".num");
+      if (t && r.dataset.label === restT.label) t.textContent = fmtTimer(left);
+      else { r.dataset.label = restT.label; r.innerHTML = `<div><small>Rest · next: ${esc(restT.label)}</small><span class="num">${fmtTimer(left)}</span></div><div class="rest-btns"><button type="button" data-plan="rest-15" aria-label="15 seconds less">−15s</button><button type="button" data-plan="rest+15" aria-label="15 seconds more">+15s</button><button type="button" class="go" data-plan="skiprest">Skip</button></div>`; }
+    }
+  }
+}
+
+async function finishSession() {
+  const plan = getPlan();
+  const mins = Math.max(1, Math.round((Date.now() - session.started) / 60000));
+  let prs = 0;
+  const entries = [];
+  for (const ex of session.ex) {
+    const done = ex.sets.filter((s) => s.done);
+    if (!done.length) continue;
+    const log = done.map((s) => ({ w: numOrNull(s.w), r: numOrNull(s.r) || 0 }));
+    const ws = log.map((s) => s.w).filter((w) => w !== null);
+    const top = ws.length ? Math.max(...ws) : null;
+    const repsAtTop = Math.max(...log.filter((s) => s.w === top).map((s) => s.r));
+    if (top !== null && ex.best !== null && top > ex.best) prs++;
+    const e = makeEntry("gym", { exercise: ex.name, sets: done.length, reps: repsAtTop, weight: top, details: session.dayName });
+    e.data.setLog = log; e.data.planDay = session.dayName;
+    entries.push(e);
+  }
+  if (!entries.length) { toast("Tick at least one set before you finish."); return; }
+  entries[0].minutes = mins;
+  try {
+    for (const e of entries) await store.putEntry(e);
+    if (plan) await store.putPlan({ ...plan, nextDay: (session.dayIndex + 1) % plan.days.length });
+    toast(`Workout saved: ${entries.length} exercises in ${mins} min${prs ? ` · ${prs} new PR${prs > 1 ? "s" : ""} 🏆` : ""}`);
+    session = null; restT.end = 0; saveSession(); clearInterval(gymIv); paintPlan(); changed();
+  } catch (err) { saveFailed(err); }
+}
+
+async function planAction(act, btn) {
+  if (act === "start") return startSession();
+  if (act === "setup") { planUi = "setup"; planMsg = ""; return paintPlan(); }
+  if (act === "cancel") { planUi = "view"; planMsg = ""; return paintPlan(); }
+  if (act === "stop") { if (planCtl) planCtl.abort(); return; }
+  if (act === "skiprest") { restT.end = 0; const r = $("#rest"); if (r) r.hidden = true; return; }
+  if (act === "rest-15") { if (restT.end) restT.end = Math.max(Date.now() + 1000, restT.end - 15000); return tickGym(); }
+  if (act === "rest+15") { if (restT.end) restT.end += 15000; return tickGym(); }
+  if (act === "finish") return finishSession();
+  if (act === "discard") {
+    if (btn.dataset.armed) { session = null; restT.end = 0; saveSession(); clearInterval(gymIv); paintPlan(); toast("Workout discarded"); }
+    else { btn.dataset.armed = "1"; btn.textContent = "Tap again to discard"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = "Discard workout"; } }, 3000); }
+    return;
+  }
+  if (act === "template") {
+    const p = templatePlan(readSettings());
+    try { await store.putPlan(p); planUi = "view"; planMsg = "Standard plan ready. You can personalize it with AI anytime from “Change plan”."; paintPlan(); } catch (err) { saveFailed(err); }
+  }
+}
+
+async function submitPlanForm() {
+  if (planCtl) return;
+  const settings = readSettings(), feedback = val("pl-feedback");
+  planCtl = new AbortController(); planMsg = "";
+  paintSetup($("#plan-card"), getPlan());
+  try {
+    const p = await buildPlanAI(settings, feedback);
+    await store.putPlan(p);
+    planUi = "view"; if (!planMsg) planMsg = "Your plan is ready. Weights adjust automatically as you log workouts.";
+  } catch (e) {
+    planMsg = e && e.code === "cancelled" ? "Stopped." : e && e.code === "invalid_argument" ? "This plan is read-only for you." : `The AI couldn't build a plan right now${e && e.code ? " (" + e.code + ")" : ""}. Try again, or use a standard plan.`;
+  } finally { planCtl = null; if (current === "gym" && !session) paintPlan(); }
+}
+
+$("#main").addEventListener("click", (ev) => {
+  const dm = ev.target.closest("[data-demo]");
+  if (dm) {
+    ev.preventDefault();
+    const k = dm.dataset.demo, d = dm.parentElement;
+    if (openDemos.has(k)) openDemos.delete(k); else openDemos.add(k);
+    d.open = openDemos.has(k);
+    return;
+  }
+  const pa = ev.target.closest("[data-plan]");
+  if (pa) { planAction(pa.dataset.plan, pa); return; }
+  const sp = ev.target.closest("[data-step]");
+  if (sp && session) {
+    const [i, j, f, d] = sp.dataset.step.split("."), ex = session.ex[Number(i)], s = ex && ex.sets[Number(j)]; if (!s) return;
+    if (f === "w") {
+      const old = numOrNull(s.w), cur = old ?? 0, inc = cur < 20 && !(cur === 20 && Number(d) > 0) ? 1 : 2.5;
+      s.w = Math.max(0, round1(cur + inc * Number(d)));
+      // carry the new weight to later sets that still had the old weight
+      ex.sets.forEach((x, k) => { if (k > Number(j) && !x.done && numOrNull(x.w) === old) { x.w = s.w; const el = document.querySelector(`[data-sw="${i}.${k}"]`); if (el) el.value = s.w; } });
+    } else s.r = Math.max(0, (numOrNull(s.r) ?? 0) + Number(d));
+    const el = document.querySelector(`[data-s${f}="${i}.${j}"]`); if (el) el.value = f === "w" ? s.w : s.r;
+    saveSession(); return;
+  }
+  const tk = ev.target.closest("[data-tick]");
+  if (tk && session) {
+    const [i, j] = tk.dataset.tick.split(".").map(Number), ex = session.ex[i], s = ex && ex.sets[j]; if (!s) return;
+    s.done = !s.done;
+    if (s.done) {
+      const w = numOrNull(s.w);
+      if (w !== null && ex.best !== null && w > ex.best) toast(`🏆 New PR on ${ex.name}: ${w} kg!`);
+      const exIdx = session.ex.indexOf(ex), last = ex.sets.every((x) => x.done) && exIdx === session.ex.length - 1;
+      if (ex.sets.every((x) => x.done) && session.ex[exIdx + 1]) { openDemos.delete(exKey(ex.name)); openDemos.add(exKey(session.ex[exIdx + 1].name)); }
+      if (!last) { restT.end = Date.now() + ex.rest * 1000; restT.label = ex.sets.every((x) => x.done) ? ((session.ex[exIdx + 1] && session.ex[exIdx + 1].name) || "next exercise") : ex.name; beep(0); }
+    }
+    saveSession(); paintPlan(); return;
+  }
+  const as = ev.target.closest("[data-addset]");
+  if (as && session) { const ex = session.ex[Number(as.dataset.addset)]; const l = ex.sets[ex.sets.length - 1] || { w: "", r: ex.repMin }; ex.sets.push({ w: l.w, r: l.r, done: false }); saveSession(); paintPlan(); }
+});
+$("#main").addEventListener("input", (ev) => {
+  const t = ev.target;
+  if (t.closest && t.closest("#plan-form")) { planDirty = true; return; }
+  if (!session) return;
+  const k = t.dataset.sw || t.dataset.sr; if (!k) return;
+  const [i, j] = k.split(".").map(Number), s = session.ex[i] && session.ex[i].sets[j]; if (!s) return;
+  if (t.dataset.sw) s.w = t.value; else s.r = t.value;
+  saveSession();
+});
+$("#main").addEventListener("change", async (ev) => {
+  if (ev.target.id !== "plan-day") return;
+  const plan = getPlan(); if (!plan) return;
+  try { await store.putPlan({ ...plan, nextDay: Number(ev.target.value) || 0 }); } catch (err) { saveFailed(err); }
+});
+
+// ---------- Quick links ----------
+const yt = (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+const sp = (q) => "https://open.spotify.com/search/" + encodeURIComponent(q);
+const CLAUDE = { name: "Claude", url: "https://claude.ai/new" };
+const DEFAULT_LINKS = {
+  gym: [{ name: "YouTube", url: yt("gym workout"), note: "Workout videos" }, { name: "Spotify", url: sp("workout"), note: "Workout music" }, { ...CLAUDE, note: "Make a training plan" }],
+  study: [{ ...CLAUDE, note: "Ask & learn" }, { name: "YouTube", url: yt("study with me pomodoro"), note: "Study with me" }, { name: "Spotify", url: sp("deep focus"), note: "Focus music" }, { name: "Google Docs", url: "https://docs.google.com/", note: "Notes" }],
+  work: [{ name: "Gmail", url: "https://mail.google.com/", note: "Email" }, { name: "Google Calendar", url: "https://calendar.google.com/", note: "Schedule" }, { ...CLAUDE, note: "Write & plan" }, { name: "LinkedIn", url: "https://www.linkedin.com/", note: "Network" }],
+  health: [{ name: "YouTube", url: yt("stretching routine"), note: "Stretching" }, { name: "Spotify", url: sp("sleep"), note: "Sleep sounds" }],
+  mood: [{ name: "Spotify", url: sp("mood booster"), note: "Mood booster" }, { name: "YouTube", url: yt("10 minute guided meditation"), note: "Meditation" }, { ...CLAUDE, note: "Talk it through" }],
+  goals: [{ ...CLAUDE, note: "Plan your goals" }, { name: "Google Calendar", url: "https://calendar.google.com/", note: "Block the time" }],
+  reminders: [{ name: "Google Calendar", url: "https://calendar.google.com/", note: "Your phone alerts" }],
+};
+const BRAND = { YouTube: "#D3201B", Spotify: "#1A9E4A", Claude: "#C2603F", Gmail: "#C5372C", "Google Calendar": "#3367D6", "Google Docs": "#3367D6", LinkedIn: "#0A66C2" };
+function linkUrl(u) {
+  u = String(u || "").trim(); if (!u) return null;
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  try { const x = new URL(u); return /^https?:$/.test(x.protocol) && x.hostname.includes(".") ? x.href : null; } catch (e) { return null; }
+}
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } };
+function mountLinks(area) {
+  if (!DEFAULT_LINKS[area]) return;
+  const stack = $("#main .stack"); if (!stack) return;
+  stack.insertAdjacentHTML("afterbegin", `<div class="card a-${area}"><div class="card-head"><h2>Quick links</h2><button type="button" class="cal linkbtn" data-link-toggle>+ Add link</button></div>
+    <div class="link-grid" id="link-grid"></div>
+    <form class="link-form" id="link-form" hidden><div class="row">${field("l-name", "Name", 'placeholder="Duolingo" autocomplete="off"')}${field("l-url", "Web address", 'placeholder="duolingo.com" inputmode="url" autocomplete="off"')}</div><div class="btns"><button class="btn">Save link</button></div></form></div>`);
+  paintLinks();
+}
+function paintLinks() {
+  const grid = $("#link-grid"); if (!grid) return;
+  const all = [...(DEFAULT_LINKS[current] || []), ...state.links.filter((l) => l.area === current)];
+  grid.innerHTML = all.map((l) => {
+    const custom = !!l.id;
+    return `<div class="qlink-wrap"><a class="qlink ${custom ? "custom" : ""}" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="qbadge" style="--b:${esc(BRAND[l.name] || "var(--c)")}">${esc(String(l.name || "?").trim().charAt(0).toUpperCase())}</span><span><b>${esc(l.name)}</b><small>${esc(l.note || hostOf(l.url))}</small></span></a>${custom ? `<button class="del qdel" data-link-del="${esc(l.id)}" aria-label="Remove ${esc(l.name)}">Delete</button>` : ""}</div>`;
+  }).join("");
+}
+// ---------- AI helper (one per section) ----------
+const AI_PRESETS = {
+  gym: ["Make me a workout for today", "Am I getting stronger? Check my records", "Plan my training week"],
+  study: ["Quiz me on what I studied recently", "Make a study plan for this week", "How can I focus better?"],
+  work: ["Help me prioritize my open tasks", "Plan my workday", "Summarize my work week"],
+  health: ["How is my sleep? Give me tips", "Make me a better evening routine", "Am I drinking enough water?"],
+  mood: ["What patterns do you see in my mood?", "Give me a 5-minute mood reset", "What makes my good days good?"],
+  goals: ["Break my goals into small steps", "Which goal should I focus on this week?", "Suggest a new goal for me"],
+  reminders: ["Suggest a daily routine with reminder times", "Are my reminders realistic?"],
+};
+let aiCtl = null;
+function areaContext(area) {
+  if (area === "goals") return "Goals:\n" + (state.goals.map((g) => `- [${g.done ? "done" : "open"}] (${g.area}) ${g.text}${g.deadline ? " by " + g.deadline : ""}`).join("\n") || "No goals yet.");
+  if (area === "reminders") return "Reminders:\n" + (state.reminders.map((r) => `- ${r.text}: ${whenLabel(r)}`).join("\n") || "No reminders yet.");
+  const es = sorted(recentIn(area, 30)).slice(0, 80).map((e) => `- ${e.date} ${e.title}${entryMeta(e) ? " (" + entryMeta(e) + ")" : ""}`).join("\n") || "Nothing logged in the last 30 days.";
+  const goals = state.goals.filter((g) => !g.done && g.area === area).map((g) => "- " + g.text).join("\n") || "none";
+  return `Entries, last 30 days (newest first):\n${es}\n\nOpen goals for this section:\n${goals}`;
+}
+function mountAI(area) {
+  if (!AI_PRESETS[area]) return;
+  const stack = $("#main .stack"); if (!stack) return;
+  const label = AREA_LABEL[area] || "Reminders";
+  const html = `<div class="card a-${area}"><div class="card-head"><h2>AI helper</h2><span class="muted" style="font-size:13px">Knows your ${esc(label)} data</span></div>
+    <div class="chips-in">${AI_PRESETS[area].map((q) => `<button type="button" class="chip" data-ai-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+    <form class="quick" id="ai-form"><label for="ai-in" hidden>Ask the AI helper</label><input id="ai-in" placeholder="Ask anything about your ${esc(label.toLowerCase())}…" autocomplete="off"><button class="btn" id="ai-send">Ask</button><button type="button" class="btn ghost" id="ai-stop" hidden>Stop</button></form>
+    <div class="ai-out" id="ai-out" aria-live="polite" hidden></div></div>`;
+  if ($("#link-grid") && stack.firstElementChild) stack.firstElementChild.insertAdjacentHTML("afterend", html);
+  else stack.insertAdjacentHTML("afterbegin", html);
+}
+async function askAI(q) {
+  q = String(q || "").trim();
+  const out = $("#ai-out"); if (!q || !out) return;
+  if (aiCtl) aiCtl.abort();
+  out.hidden = false;
+  const sample = await getSample();
+  if (!sample) { out.textContent = "The AI helper only works when this page is opened on claude.ai."; return; }
+  const area = current, ctl = new AbortController(); aiCtl = ctl;
+  out.classList.add("thinking"); out.textContent = "Thinking…";
+  $("#ai-stop").hidden = false; $("#ai-send").disabled = true;
+  const prompt = `You are the AI helper inside the ${AREA_LABEL[area] || "Reminders"} section of the user's personal life app (gym, study, work, health, mood, goals, reminders). Today is ${new Date().toLocaleDateString("en-US", { weekday: "long" })}, ${today()}.
+
+The user's data for this section:
+${areaContext(area)}
+
+The user asks: ${q}
+
+Answer directly and practically. Use their real data where it matters and never invent past data; if there is little data, say so in one line and still help. Plain text only; for lists use lines starting with "- ". Keep it under 200 words unless they ask for a plan or a quiz. Reply in the language the user writes in.${area === "study" ? " For a quiz: 5 short questions on the subjects they studied, then the answers at the end under 'Answers:'." : ""}${area === "gym" ? " For a workout: exercises with sets × reps and a suggested weight based on their records." : ""}`;
+  const live = () => aiCtl === ctl && $("#ai-out") === out;
+  try {
+    const res = await sample(prompt, { signal: ctl.signal, onText: ({ text }) => { if (live()) { out.classList.remove("thinking"); out.innerHTML = mdLite(text); } } });
+    if (live()) { out.classList.remove("thinking"); out.innerHTML = mdLite(res.text) + (res.truncated ? "\n\n<em>(Cut short. Ask for less at a time.)</em>" : ""); }
+  } catch (e) {
+    if (!live()) return;
+    out.classList.remove("thinking");
+    if (e && e.code === "cancelled") out.innerHTML = e.text ? mdLite(e.text) : "Stopped.";
+    else out.innerHTML = (e && e.text && e.code !== "refused" ? mdLite(e.text) + "\n\n" : "") + esc(coachError(e && e.code));
+  } finally {
+    if (aiCtl === ctl) { aiCtl = null; const s = $("#ai-stop"); if (s) s.hidden = true; const b = $("#ai-send"); if (b) b.disabled = false; }
+  }
+}
+
+$("#main").addEventListener("submit", async (ev) => {
+  if (ev.target.id === "ai-form") { ev.preventDefault(); askAI(val("ai-in")); return; }
+  if (ev.target.id === "plan-form") { ev.preventDefault(); submitPlanForm(); return; }
+  if (ev.target.id !== "link-form") return;
+  ev.preventDefault();
+  const name = val("l-name"), url = linkUrl(val("l-url"));
+  if (!name || !url) { toast("Add a name and a web address, like duolingo.com"); return; }
+  try { await store.putLink({ id: newId("l"), area: current, name, url }); toast(`Added ${name}`); $("#l-name").value = ""; $("#l-url").value = ""; $("#link-form").hidden = true; } catch (err) { saveFailed(err); }
+});
+
+// ---------- Phone navigation ----------
+const BNAV = [
+  ["home", "Home", '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>'],
+  ["gym", "Gym", '<path d="M6 7v10M3 9.5v5M18 7v10M21 9.5v5M6 12h12"/>'],
+  ["study", "Study", '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5V5.5M8 7h8"/>'],
+  ["coach", "Coach", '<path d="M4 5h16v11H10l-5 4v-4H4z"/>'],
+];
+const ICON_MORE = '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/>';
+function toggleSheet(open) { const s = $("#sheet"), b = $("#sheet-bg"); if (s) s.hidden = !open; if (b) b.hidden = !open; }
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("[data-more]")) { toggleSheet($("#sheet").hidden); return; }
+  if (ev.target.closest("#sheet-bg") || ev.target.closest("#sheet a")) toggleSheet(false);
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") toggleSheet(false); });
+
+// ---------- Routing ----------
+let current = null;
+function route() {
+  const id = (location.hash || "#home").slice(1);
+  const name = views[id] ? id : "home";
+  current = name;
+  if (aiCtl) { aiCtl.abort(); aiCtl = null; }
+  $("#tabs").innerHTML = APPS.map((a) => `<a class="tab a-${a.id}" href="#${a.id}" ${a.id === name ? 'aria-current="page"' : ""}>${a.id !== "home" ? '<span class="dot" aria-hidden="true"></span>' : ""}${a.label}</a>`).join("");
+  $("#main").innerHTML = views[name].html();
+  views[name].bind();
+  mountLinks(name);
+  mountAI(name);
+  views[name].refresh();
+  const inBar = BNAV.some((b) => b[0] === name);
+  $("#bnav").innerHTML = BNAV.map(([id, l, ic]) => `<a class="a-${id === "home" ? "coach" : id}" href="#${id}" ${id === name ? 'aria-current="page"' : ""}><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg></span>${l}</a>`).join("")
+    + `<button type="button" class="a-coach" data-more ${inBar ? "" : 'aria-current="page"'}><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON_MORE}</svg></span>${inBar ? "More" : esc(APPS.find((a) => a.id === name).label)}</button>`;
+  $("#sheet").innerHTML = `<h2>All apps</h2><div class="sheet-grid">${APPS.map((a) => `<a class="a-${a.id === "home" ? "coach" : a.id}" href="#${a.id}" ${a.id === name ? 'aria-current="page"' : ""}><span class="dot"></span>${a.label}</a>`).join("")}</div>`;
+  toggleSheet(false);
+  const active = $(".tab[aria-current]"); if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest", inline: "nearest" });
+  window.scrollTo(0, 0);
+}
+let rafQueued = false;
+function changed() { if (rafQueued) return; rafQueued = true; setTimeout(() => { rafQueued = false; if (current) { views[current].refresh(); paintLinks(); } }, 0); }
+
+// Delete buttons (two-step) and goal checkboxes
+$("#main").addEventListener("click", async (ev) => {
+  const aq = ev.target.closest("[data-ai-q]");
+  if (aq) { const i = $("#ai-in"); if (i) i.value = aq.dataset.aiQ; askAI(aq.dataset.aiQ); return; }
+  if (ev.target.closest("#ai-stop")) { if (aiCtl) aiCtl.abort(); return; }
+  const tg = ev.target.closest("[data-link-toggle]");
+  if (tg) { const f = $("#link-form"); if (f) { f.hidden = !f.hidden; if (!f.hidden) $("#l-name").focus(); } return; }
+  const del = ev.target.closest("[data-del],[data-goal-del],[data-rem-del],[data-link-del]");
+  if (del) {
+    if (!del.classList.contains("armed")) { del.classList.add("armed"); del.textContent = "Delete?"; setTimeout(() => { del.classList.remove("armed"); del.textContent = "Delete"; }, 3000); return; }
+    try {
+      if (del.dataset.del) await store.delEntry(del.dataset.del);
+      else if (del.dataset.goalDel) await store.delGoal(del.dataset.goalDel);
+      else if (del.dataset.linkDel) await store.delLink(del.dataset.linkDel);
+      else await store.delReminder(del.dataset.remDel);
+      toast("Deleted");
+    } catch (err) { saveFailed(err); }
+  }
+});
+$("#main").addEventListener("change", async (ev) => {
+  const cb = ev.target.closest("[data-goal-toggle]"); if (!cb) return;
+  const g = state.goals.find((x) => x.id === cb.dataset.goalToggle); if (!g) return;
+  try { await store.putGoal({ ...g, done: cb.checked, completed: cb.checked ? today() : null }); if (cb.checked) toast("Nice work! Goal completed."); } catch (err) { cb.checked = !cb.checked; saveFailed(err); }
+});
+
+window.addEventListener("hashchange", route);
+route();
+store.init();
+loadLib();
+})();
+</script>
