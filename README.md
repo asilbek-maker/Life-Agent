@@ -21,19 +21,23 @@ A personal life-tracking app with an AI coach. It tracks gym workouts, study ses
 
 ## How it runs
 
-The app is a single page, `index.html`, published as a claude.ai artifact.
+The main app is the installable web app on GitHub Pages (`index.html`). It is offline-first:
 
-- **Saved data:** your log is stored privately per user through the artifact's database.
-- **AI:** the AI features run on the viewer's own Claude plan, so no API key is needed.
-- **Opened outside claude.ai:** the app still works but saves only in that browser, and the AI features are turned off.
+- **Saved data:** everything is saved on the phone first, then synced to a private Supabase database when you're signed in. Changes made offline wait in a queue and sync later.
+- **Sign-in:** a one-time code sent by email. No password.
+- **Privacy:** Row Level Security is on for every table. The public key in `js/config.js` can read nothing; a signed-in user sees only their own rows.
+- **Secrets:** API keys live only in Supabase secrets. See `.env.example`.
 
-`agent.py` is an earlier terminal version of the coach that uses the Anthropic API. It needs an `ANTHROPIC_API_KEY`.
+An older copy also runs as a claude.ai artifact, with its own separate data. `agent.py` is an earlier terminal version of the coach.
 
 ## Files
 
 | Path | What it is |
 |---|---|
 | `index.html` | The app |
+| `js/config.js`, `js/cloud.js` | Supabase settings and offline-first sync |
+| `supabase/migrations/` | Database schema and security rules |
+| `vendor/supabase.js` | Supabase client library (v2.45.4), kept locally so the app works offline |
 | `exlib.json`, `ex/` | Exercise library: names, muscles, instructions, and 2 photos per exercise |
 | `agent.py`, `requirements.txt` | Terminal version of the coach (Python) |
 

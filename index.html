@@ -58,7 +58,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .top-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 12px 4px; }
 .brand { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 10px; }
 .brand-mark { width: 22px; height: 22px; border-radius: 6px; background: conic-gradient(var(--gym) 0 60deg, var(--study) 0 120deg, var(--work) 0 180deg, var(--health) 0 240deg, var(--mood) 0 300deg, var(--goals) 0); }
-.sync { font-size: 12px; color: var(--muted); text-align: right; }
+.sync { font-size: 12px; color: var(--muted); text-align: right; text-decoration: none; }
 .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-block: 6px 10px; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab { flex: none; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 14px; }
@@ -351,7 +351,7 @@ div.tile:hover { border-color: var(--line); }
 <header class="top">
   <div class="wrap top-in">
     <a class="brand" href="#home"><span class="brand-mark" aria-hidden="true"></span>Life Agent</a>
-    <span class="sync" id="sync">Starting…</span>
+    <a class="sync" id="sync" href="#account">Starting…</a>
   </div>
   <nav class="tabs wrap" id="tabs" aria-label="Apps"></nav>
 </header>
@@ -361,6 +361,9 @@ div.tile:hover { border-color: var(--line); }
 <div class="sheet" id="sheet" role="dialog" aria-label="All apps" hidden></div>
 <div class="toast" id="toast" hidden></div>
 
+<script src="vendor/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/cloud.js"></script>
 <script>
 (() => {
 "use strict";
@@ -376,6 +379,7 @@ const APPS = [
   { id: "goals",  label: "Goals",  blurb: "What you're working toward. The coach can add and check these off for you." },
   { id: "reminders", label: "Reminders", blurb: "Reminders for anything. They show here and on Home, pop up while the app is open, and “Add to Google Calendar” makes your phone alert you even when it's closed." },
   { id: "reports", label: "Reports", blurb: "Your day, week, month and year across every app, compared with the period before. Ask the AI to write the report, then download it." },
+  { id: "account", label: "Settings", blurb: "Your account, cloud backup and your data." },
   { id: "coach",  label: "Coach",  blurb: "Tell it what you did in normal words. It saves everything to the right app and answers questions about your progress." },
 ];
 const LOG_AREAS = ["gym", "study", "work", "health", "mood", "other"];
@@ -393,7 +397,8 @@ const today = () => ymd(new Date());
 const sinceDate = (days) => ymd(addDays(new Date(), -(Math.max(1, days) - 1)));
 const numOrNull = (v) => { if (v === "" || v === null || v === undefined) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
-const newId = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+const UUID_RE = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const fmtDate = (s) => { if (s === today()) return "Today"; if (s === ymd(addDays(new Date(), -1))) return "Yesterday"; const d = new Date(s + "T12:00:00"); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
 const round1 = (n) => Math.round(n * 10) / 10;
 const sum = (arr, f) => arr.reduce((s, x) => s + (Number(f(x)) || 0), 0);
@@ -430,7 +435,9 @@ const store = {
   useLocal() {
     state.mode = "local";
     try { const raw = localStorage.getItem(LOCAL_KEY); if (raw) { const d = JSON.parse(raw); for (const k of KINDS) state[k] = d[k] || []; } } catch (e) {}
-    setSync("Saved in this browser only");
+    if (migrateIds()) this.saveLocal();
+    if (Cloud) Cloud.start({ getState: () => state, setKind: (k, list) => { state[k] = list; this.saveLocal(); changed(); }, onStatus: paintSync, onNotice: toast });
+    else setSync("Saved in this browser only");
     changed();
   },
   saveLocal() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(Object.fromEntries(KINDS.map((k) => [k, state[k]])))); } catch (e) {} },
@@ -450,6 +457,7 @@ const store = {
       const i = arr.findIndex((x) => x.id === item.id);
       if (op === "put") { if (i >= 0) arr[i] = item; else arr.push(item); } else if (i >= 0) arr.splice(i, 1);
       this.saveLocal(); changed();
+      if (Cloud) Cloud.queue(kind, op, item);
     }
   },
   putEntry(e) { return this.write("entries", "put", e); },
@@ -462,6 +470,9 @@ const store = {
   putPlan(p) { return this.write("plans", "put", p); },
   delLink(id) { return this.write("links", "del", { id }); },
 };
+
+// Older saves used short ids; the cloud needs UUIDs. Runs once per item.
+function migrateIds() { let n = 0; for (const k of KINDS) for (const x of state[k]) if (!UUID_RE.test(String(x.id))) { x.id = newId(); n++; } return n; }
 
 function saveFailed(e) { toast(e && e.code === "read_only" ? "This log is read-only for you." : "Couldn't save. Check your connection and try again."); }
 
@@ -1632,7 +1643,7 @@ try { session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch
 const saveSession = () => { try { if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session)); else localStorage.removeItem(SESSION_KEY); } catch (e) {} };
 let planUi = "view", planCtl = null, planMsg = "", planDirty = false, gymIv = null;
 const restT = { end: 0, label: "" };
-const getPlan = () => state.plans.find((p) => p.id === "current") || null;
+const getPlan = () => state.plans.find((p) => p.active !== false) || null;
 const exKey = (n) => String(n || "").trim().toLowerCase();
 const exHistory = (name) => sorted(inArea("gym").filter((e) => exKey((e.data && e.data.exercise) || e.title) === exKey(name)));
 const fmtRest = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${pad(s % 60)} min` : `${s} s`);
@@ -1675,7 +1686,7 @@ function cleanPlan(raw, settings) {
     }),
   })).filter((d) => d.exercises.length);
   if (!days.length) return null;
-  return { id: "current", name: String((raw && raw.name) || "My plan").slice(0, 60), days, settings, nextDay: 0, created: today() };
+  return { id: (getPlan() || {}).id || newId(), name: String((raw && raw.name) || "My plan").slice(0, 60), days, settings, nextDay: 0, active: true, created: today() };
 }
 
 const X = (name, sets, repMin, repMax, rest, notes = "") => ({ name, sets, repMin, repMax, rest, notes });
@@ -2056,6 +2067,7 @@ $("#main").addEventListener("submit", async (ev) => {
 
 // ---------- App version (installable web app outside claude.ai) ----------
 const IN_CLAUDE = !!(window.claude && typeof window.claude.use === "function");
+const Cloud = !IN_CLAUDE && window.LifeCloud && window.LifeCloud.configured ? window.LifeCloud : null;
 const CLAUDE_URL = "https://claude.ai/artifact/CS9V7jz2GnCzdtmcrd33Wr";
 const IS_STANDALONE = (() => { try { return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; } catch (e) { return false; } })();
 const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -2076,18 +2088,29 @@ function paintAppCard() {
     : `<ol class="steps"><li>In <b>Chrome</b>, tap the <b>⋮</b> menu.</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li></ol>`;
   el.innerHTML = `<div class="card-head"><h2>${IS_STANDALONE ? "Your data" : "Install Life Agent on your phone"}</h2></div>${install}
     ${IS_IOS || !installEvt ? `<p style="font-size:14px"><a class="cal" href="widget.html">📱 Add a Life Agent widget to your Smart Stack →</a></p>` : ""}
-    <p class="muted" style="font-size:13px">This app saves your data on this device. Make a backup now and then so you never lose it.</p>
-    <div class="btns"><button type="button" class="btn ghost" data-app="export">Back up data</button><label class="btn ghost" for="app-import" style="display:inline-block">Restore backup<input type="file" id="app-import" accept="application/json,.json" hidden></label></div>`;
+    ${Cloud ? (Cloud.status().signedIn
+      ? `<p class="muted" style="font-size:13px">✓ Backed up to your account. <a class="cal" href="#account">Settings</a></p>`
+      : `<p class="muted" style="font-size:13px">Your data is only on this device right now.</p><div class="btns"><a class="btn neutral" style="text-decoration:none" href="#account">Sign in to back it up</a></div>`)
+    : `<p class="muted" style="font-size:13px">This app saves your data on this device. Make a backup now and then so you never lose it.</p>
+    <div class="btns"><button type="button" class="btn ghost" data-app="export">Back up data</button><label class="btn ghost" for="app-import" style="display:inline-block">Restore backup<input type="file" id="app-import" accept="application/json,.json" hidden></label></div>`}`;
 }
 function saveBlob(filename, text, type) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
+// In the iPhone home-screen app a normal download can fail, so use the share sheet there.
+async function saveFile(filename, text, type) {
+  try {
+    const f = new File([text], filename, { type });
+    if (IS_STANDALONE && IS_IOS && navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f] }); return true; }
+  } catch (e) { if (e && e.name === "AbortError") return false; }
+  saveBlob(filename, text, type); return true;
+}
 document.addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-app]"); if (!b) return;
   if (b.dataset.app === "install" && installEvt) { installEvt.prompt(); try { await installEvt.userChoice; } catch (e) {} installEvt = null; paintAppCard(); }
-  if (b.dataset.app === "export") { saveBlob(`life-agent-backup-${today()}.json`, JSON.stringify({ app: "life-agent", version: 1, exported: new Date().toISOString(), ...Object.fromEntries(KINDS.map((k) => [k, state[k]])) }, null, 1), "application/json"); toast("Backup saved to your downloads"); }
+  if (b.dataset.app === "export") { const ok = await saveFile(`life-agent-backup-${today()}.json`, JSON.stringify({ app: "life-agent", version: 2, exported: new Date().toISOString(), ...Object.fromEntries(KINDS.map((k) => [k, state[k]])) }, null, 1), "application/json"); if (ok) toast("Export saved"); }
 });
 document.addEventListener("change", (ev) => {
   if (ev.target.id !== "app-import" || !ev.target.files || !ev.target.files[0]) return;
@@ -2097,12 +2120,88 @@ document.addEventListener("change", (ev) => {
       const d = JSON.parse(String(r.result));
       if (!d || d.app !== "life-agent") throw new Error("not a backup");
       for (const k of KINDS) if (Array.isArray(d[k])) state[k] = d[k];
-      if (state.mode === "local") store.saveLocal(); else toast("Restore works in the installed app.");
+      migrateIds();
+      if (state.mode === "local") { store.saveLocal(); if (Cloud) for (const k of KINDS) for (const x of state[k]) Cloud.queue(k, "put", x); } else toast("Restore works in the installed app.");
       changed(); toast("Backup restored");
     } catch (e) { toast("That file isn't a Life Agent backup."); }
   };
   r.readAsText(ev.target.files[0]);
   ev.target.value = "";
+});
+
+// ---------- Settings: account, cloud sync, data ----------
+const acct = { step: "email", email: "", busy: false, msg: "", key: "" };
+function paintSync(s) {
+  if (!s || !s.signedIn) setSync("On this phone only · Sign in");
+  else if (!s.online) setSync(s.pending ? `Offline · ${s.pending} to sync` : "Offline");
+  else if (s.syncing) setSync("Syncing…");
+  else if (s.pending) setSync(`${s.pending} to sync`);
+  else setSync("Synced ✓");
+  if (current === "account") paintAccount();
+  if (current === "home") paintAppCard();
+}
+views.account = {
+  html() {
+    return `<section class="area-head">${head(APPS.find((a) => a.id === "account")).replace(/^<div class="area-head">|<\/div>$/g, "")}</section>
+      <div class="two">
+        <div class="card a-coach" id="acct-card"></div>
+        <div class="card"><h2>Your data</h2>
+          <p class="muted" style="font-size:13px">Download everything you've logged as one file. You can restore it later, on any phone.</p>
+          <div class="btns"><button type="button" class="btn ghost" data-app="export">Export all data (JSON)</button><label class="btn ghost" for="app-import" style="display:inline-block">Restore from a file<input type="file" id="app-import" accept="application/json,.json" hidden></label></div>
+          <p class="muted num" style="font-size:12px" id="data-count"></p></div>
+      </div>`;
+  },
+  bind() { acct.key = ""; paintAccount(); },
+  refresh() {
+    paintAccount();
+    const c = $("#data-count"); if (c) c.textContent = `${state.entries.length} entries · ${state.goals.length} goals · ${state.reminders.length} reminders`;
+  },
+};
+function paintAccount() {
+  const el = $("#acct-card"); if (!el) return;
+  const s = Cloud ? Cloud.status() : null;
+  const key = [!!s, s && s.signedIn, s && s.email, acct.step, acct.busy, acct.msg].join("|");
+  if (key !== acct.key) {
+    acct.key = key;
+    const msg = acct.msg ? `<p class="muted" style="font-size:13px" role="status">${esc(acct.msg)}</p>` : "";
+    if (!s) el.innerHTML = `<h2>Account</h2><p class="muted">Cloud backup isn't available in this version. Your data is saved on this device.</p>`;
+    else if (s.signedIn) el.innerHTML = `<h2>Account</h2><p>Signed in as <b>${esc(s.email || "you")}</b></p><p class="muted" style="font-size:13px" id="acct-status"></p>
+      <div class="btns"><button type="button" class="btn" data-acct="sync">Sync now</button><button type="button" class="btn ghost" data-acct="signout">Sign out</button></div>`;
+    else if (acct.step === "code") el.innerHTML = `<h2>Enter your code</h2><p class="muted" style="font-size:13px">We emailed a code to <b>${esc(acct.email)}</b>. It can take a minute. Check your spam folder too.</p>
+      <form id="acct-code-form" class="link-form"><label for="acct-code">Code from the email<input id="acct-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required placeholder="123456"></label>
+      <div class="btns"><button class="btn" ${acct.busy ? "disabled" : ""}>${acct.busy ? "Checking…" : "Sign in"}</button><button type="button" class="btn ghost" data-acct="back">Use a different email</button></div></form>${msg}`;
+    else el.innerHTML = `<h2>Sign in</h2><p class="muted" style="font-size:13px">Sign in to keep your data safe in the cloud. We email you a code, so there's no password to remember.</p>
+      <form id="acct-email-form" class="link-form"><label for="acct-email">Your email<input id="acct-email" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com" value="${esc(acct.email)}"></label>
+      <div class="btns"><button class="btn" ${acct.busy ? "disabled" : ""}>${acct.busy ? "Sending…" : "Email me a code"}</button></div></form>${msg}`;
+  }
+  const st = $("#acct-status");
+  if (st && s) st.textContent = (s.syncing ? "Syncing…" : !s.online ? "Offline. Changes are saved on this phone and sync when you're back online."
+    : s.pending ? `${s.pending} change${s.pending === 1 ? "" : "s"} waiting to sync`
+    : s.lastSync ? `Everything is synced · ${new Date(s.lastSync).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : "Connected")
+    + (s.error ? ` · Last problem: ${s.error}` : "");
+}
+$("#main").addEventListener("submit", async (ev) => {
+  const id = ev.target.id;
+  if (id !== "acct-email-form" && id !== "acct-code-form") return;
+  ev.preventDefault();
+  if (!Cloud || acct.busy) return;
+  const email = id === "acct-email-form" ? val("acct-email").toLowerCase() : acct.email, code = val("acct-code").replace(/\D/g, "");
+  acct.busy = true; acct.msg = ""; acct.email = email; paintAccount();
+  try {
+    if (id === "acct-email-form") { await Cloud.sendCode(email); acct.step = "code"; }
+    else { await Cloud.verifyCode(email, code); acct.step = "email"; toast("Signed in"); }
+  } catch (e) {
+    acct.msg = id === "acct-email-form" ? `Couldn't send the code: ${(e && e.message) || "check your connection"}` : "That code didn't work. Check it, or go back and ask for a new one.";
+  } finally { acct.busy = false; paintAccount(); const c = $("#acct-code"); if (c) c.focus(); }
+});
+$("#main").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-acct]"); if (!b || !Cloud) return;
+  if (b.dataset.acct === "back") { acct.step = "email"; acct.msg = ""; paintAccount(); }
+  if (b.dataset.acct === "sync") { await Cloud.sync(); toast(Cloud.status().online ? "Synced" : "You're offline"); }
+  if (b.dataset.acct === "signout") {
+    if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Tap again to sign out"; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Sign out"; } }, 3000); return; }
+    await Cloud.signOut(); toast("Signed out. Your data stays on this phone.");
+  }
 });
 
 // ---------- Phone navigation ----------

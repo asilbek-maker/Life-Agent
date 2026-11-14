@@ -2,3 +2,9 @@
 life_data.json
 .env
 __pycache__/
+
+# Local secrets and Supabase CLI state
+.env
+.env.local
+supabase/.temp/
+supabase/.branches/
