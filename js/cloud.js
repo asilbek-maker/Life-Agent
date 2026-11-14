@@ -210,6 +210,17 @@
       const { error } = await client.auth.verifyOtp({ email, token, type: "email" });
       if (error) throw error;
     },
+    async signUp(email, password) {
+      const { data, error } = await client.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+      if (error) throw error;
+      // Supabase answers an already-registered email with a user that has no identities.
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) throw new Error("already registered");
+      return { needsConfirm: !data.session };
+    },
+    async signIn(email, password) {
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    },
     async signOut() { await client.auth.signOut(); },
     sync,
     nextDue,

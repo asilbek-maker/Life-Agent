@@ -2130,7 +2130,7 @@ document.addEventListener("change", (ev) => {
 });
 
 // ---------- Settings: account, cloud sync, data ----------
-const acct = { step: "email", email: "", busy: false, msg: "", key: "" };
+const acct = { email: "", pw: "", busy: false, msg: "", key: "" };
 function paintSync(s) {
   if (!s || !s.signedIn) setSync("On this phone only · Sign in");
   else if (!s.online) setSync(s.pending ? `Offline · ${s.pending} to sync` : "Offline");
@@ -2160,19 +2160,18 @@ views.account = {
 function paintAccount() {
   const el = $("#acct-card"); if (!el) return;
   const s = Cloud ? Cloud.status() : null;
-  const key = [!!s, s && s.signedIn, s && s.email, acct.step, acct.busy, acct.msg].join("|");
+  const key = [!!s, s && s.signedIn, s && s.email, acct.busy, acct.msg].join("|");
   if (key !== acct.key) {
     acct.key = key;
     const msg = acct.msg ? `<p class="muted" style="font-size:13px" role="status">${esc(acct.msg)}</p>` : "";
     if (!s) el.innerHTML = `<h2>Account</h2><p class="muted">Cloud backup isn't available in this version. Your data is saved on this device.</p>`;
     else if (s.signedIn) el.innerHTML = `<h2>Account</h2><p>Signed in as <b>${esc(s.email || "you")}</b></p><p class="muted" style="font-size:13px" id="acct-status"></p>
       <div class="btns"><button type="button" class="btn" data-acct="sync">Sync now</button><button type="button" class="btn ghost" data-acct="signout">Sign out</button></div>`;
-    else if (acct.step === "code") el.innerHTML = `<h2>Enter your code</h2><p class="muted" style="font-size:13px">We emailed a code to <b>${esc(acct.email)}</b>. It can take a minute. Check your spam folder too.</p>
-      <form id="acct-code-form" class="link-form"><label for="acct-code">Code from the email<input id="acct-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required placeholder="123456"></label>
-      <div class="btns"><button class="btn" ${acct.busy ? "disabled" : ""}>${acct.busy ? "Checking…" : "Sign in"}</button><button type="button" class="btn ghost" data-acct="back">Use a different email</button></div></form>${msg}`;
-    else el.innerHTML = `<h2>Sign in</h2><p class="muted" style="font-size:13px">Sign in to keep your data safe in the cloud. We email you a code, so there's no password to remember.</p>
-      <form id="acct-email-form" class="link-form"><label for="acct-email">Your email<input id="acct-email" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com" value="${esc(acct.email)}"></label>
-      <div class="btns"><button class="btn" ${acct.busy ? "disabled" : ""}>${acct.busy ? "Sending…" : "Email me a code"}</button></div></form>${msg}`;
+    else el.innerHTML = `<h2>Sign in</h2><p class="muted" style="font-size:13px">Sign in to keep your data safe in the cloud. First time here? Fill in both boxes and tap <b>Create account</b>.</p>
+      <form id="acct-form" class="link-form">
+        <label for="acct-email">Your email<input id="acct-email" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com" value="${esc(acct.email)}"></label>
+        <label for="acct-pw">Password (8 or more characters)<input id="acct-pw" type="password" autocomplete="current-password" minlength="8" required value="${esc(acct.pw)}"></label>
+        <div class="btns"><button class="btn" ${acct.busy ? "disabled" : ""}>${acct.busy ? "One moment…" : "Sign in"}</button><button type="button" class="btn ghost" data-acct="signup" ${acct.busy ? "disabled" : ""}>Create account</button></div></form>${msg}`;
   }
   const st = $("#acct-status");
   if (st && s) st.textContent = (s.syncing ? "Syncing…" : !s.online ? "Offline. Changes are saved on this phone and sync when you're back online."
@@ -2180,23 +2179,31 @@ function paintAccount() {
     : s.lastSync ? `Everything is synced · ${new Date(s.lastSync).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}` : "Connected")
     + (s.error ? ` · Last problem: ${s.error}` : "");
 }
-$("#main").addEventListener("submit", async (ev) => {
-  const id = ev.target.id;
-  if (id !== "acct-email-form" && id !== "acct-code-form") return;
-  ev.preventDefault();
-  if (!Cloud || acct.busy) return;
-  const email = id === "acct-email-form" ? val("acct-email").toLowerCase() : acct.email, code = val("acct-code").replace(/\D/g, "");
-  acct.busy = true; acct.msg = ""; acct.email = email; paintAccount();
+async function accountAction(mode) {
+  const form = $("#acct-form");
+  if (!Cloud || acct.busy || !form) return;
+  if (!form.reportValidity()) return;
+  acct.email = val("acct-email").toLowerCase(); acct.pw = $("#acct-pw").value;
+  acct.busy = true; acct.msg = ""; paintAccount();
   try {
-    if (id === "acct-email-form") { await Cloud.sendCode(email); acct.step = "code"; }
-    else { await Cloud.verifyCode(email, code); acct.step = "email"; toast("Signed in"); }
+    if (mode === "signup") {
+      const r = await Cloud.signUp(acct.email, acct.pw);
+      if (r.needsConfirm) acct.msg = "Almost done. Open the email from Supabase and tap the link in it. The page that opens may show an error; that's fine. Then come back here and tap Sign in.";
+      else { acct.pw = ""; toast("Account created. You're signed in."); }
+    } else { await Cloud.signIn(acct.email, acct.pw); acct.pw = ""; toast("Signed in"); }
   } catch (e) {
-    acct.msg = id === "acct-email-form" ? `Couldn't send the code: ${(e && e.message) || "check your connection"}` : "That code didn't work. Check it, or go back and ask for a new one.";
-  } finally { acct.busy = false; paintAccount(); const c = $("#acct-code"); if (c) c.focus(); }
-});
+    const m = String((e && e.message) || "");
+    acct.msg = /already registered/i.test(m) ? "This email already has an account. Tap Sign in."
+      : /not confirmed/i.test(m) ? "Confirm your email first: open the email from Supabase and tap the link, then tap Sign in."
+      : /invalid login/i.test(m) ? "Wrong email or password. New here? Tap Create account."
+      : /fetch|network|load failed/i.test(m) ? "No connection. Check your internet and try again."
+      : `That didn't work: ${m || "unknown error"}`;
+  } finally { acct.busy = false; paintAccount(); }
+}
+$("#main").addEventListener("submit", (ev) => { if (ev.target.id === "acct-form") { ev.preventDefault(); accountAction("signin"); } });
 $("#main").addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-acct]"); if (!b || !Cloud) return;
-  if (b.dataset.acct === "back") { acct.step = "email"; acct.msg = ""; paintAccount(); }
+  if (b.dataset.acct === "signup") { accountAction("signup"); return; }
   if (b.dataset.acct === "sync") { await Cloud.sync(); toast(Cloud.status().online ? "Synced" : "You're offline"); }
   if (b.dataset.acct === "signout") {
     if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Tap again to sign out"; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Sign out"; } }, 3000); return; }
