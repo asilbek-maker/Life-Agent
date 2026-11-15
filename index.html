@@ -299,6 +299,16 @@ div.tile:hover { border-color: var(--line); }
 .ai-out { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border-radius: 10px; background: var(--surface-2); font-size: 14px; line-height: 1.6; max-height: 460px; overflow-y: auto; }
 .ai-out.thinking { color: var(--muted); font-style: italic; }
 
+/* Quick log result */
+.qres { display: grid; gap: 6px; }
+.qres ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.qres li { padding-left: 22px; position: relative; overflow-wrap: anywhere; }
+.qres li::before { content: "✓"; position: absolute; left: 0; color: var(--health); font-weight: 700; }
+.qres li.miss::before { content: "?"; color: var(--mood); }
+.qres li.gone { text-decoration: line-through; color: var(--muted); }
+.qres li.gone::before { content: "↩"; color: var(--muted); }
+.undo { appearance: none; border: 0; background: none; padding: 2px 0; color: var(--accent); font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: underline; }
+
 /* Coach */
 .chat { gap: 0; padding: 0; overflow: hidden; }
 .chat-log { display: grid; gap: 12px; padding: 18px; max-height: min(62vh, 640px); min-height: 280px; overflow-y: auto; align-content: start; }
@@ -364,6 +374,8 @@ div.tile:hover { border-color: var(--line); }
 <script src="vendor/supabase.js"></script>
 <script src="js/config.js"></script>
 <script src="js/cloud.js"></script>
+<script src="js/quicklog.js"></script>
+<script src="js/agent.js"></script>
 <script>
 (() => {
 "use strict";
@@ -576,8 +588,9 @@ views.home = {
     const greet = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
     return `<section class="hero">
         <div class="area-head"><p class="muted">${esc(new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }))}</p><h1>${greet}</h1></div>
-        <form class="quick a-coach" id="quick"><label class="sr" for="quick-in" hidden>Tell your coach what you did</label><input id="quick-in" placeholder="Tell your coach: “ran 5k, studied 2h of math”" autocomplete="off"><button class="btn">Send</button></form>
+        <form class="quick a-coach" id="quick"><label class="sr" for="quick-in" hidden>Tell your coach what you did</label><input id="quick-in" placeholder="Quick log: “bench 60kg 4x8, slept 7h”" autocomplete="off" enterkeyhint="send"><button class="btn" id="quick-btn">Log</button></form>
       </section>
+      <div class="card a-coach" id="quick-out" hidden></div>
       <div class="card" id="app-card" hidden></div>
       <div class="card a-reminders"><div class="card-head"><h2>Today's reminders</h2><a class="cal" href="#reminders">Manage</a></div><div id="home-rem"></div></div>
       <div class="tiles" id="tiles"></div>
@@ -588,7 +601,16 @@ views.home = {
   },
   bind() {
     paintAppCard();
-    $("#quick").addEventListener("submit", (ev) => { ev.preventDefault(); const t = val("quick-in"); if (!t) return; pendingCoachMessage = t; location.hash = "#coach"; });
+    $("#quick").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const t = val("quick-in"); if (!t || quick.busy) return;
+      if (IN_CLAUDE) { pendingCoachMessage = t; location.hash = "#coach"; return; }
+      quick.busy = true; quick.res = null; paintQuick();
+      try { quick.res = await quickLog(t); if (quick.res.lines.length && $("#quick-in")) $("#quick-in").value = ""; }
+      catch (e) { quick.res = { lines: [], unknown: [], failed: ["Couldn't save that. Try again."], server: [], local: [] }; }
+      finally { quick.busy = false; paintQuick(); }
+    });
+    paintQuick();
   },
   refresh() {
     const tr = todaysReminders();
@@ -1162,7 +1184,9 @@ function paintChat() {
     if (m.html) return `<div class="msg bot" style="white-space:normal">${m.html}</div>`;
     const notes = m.notes.length ? `<div class="notes">${m.notes.map((n) => `<span class="note a-${esc(n.area)}">✓ ${esc(n.text)}</span>`).join("")}</div>` : "";
     const body = m.text ? mdLite(m.text) : m.pending ? (m.notes.length ? "Working…" : "Thinking…") : "";
-    return `<div class="msg bot ${m.err ? "err" : ""} ${m.pending && !m.text ? "thinking" : ""}">${body}${notes}</div>`;
+    const undo = !m.pending && ((m.server && m.server.length) || (m.local && m.local.length)) ? `<div style="white-space:normal">${m.undone ? '<span class="muted" style="font-size:13px">Undone</span>' : `<button type="button" class="undo" data-chat-undo="${chat.indexOf(m)}">Undo</button>`}</div>` : "";
+    const extra = m.extraHtml ? `<div style="white-space:normal;margin-top:8px">${m.extraHtml}</div>` : "";
+    return `<div class="msg bot ${m.err ? "err" : ""} ${m.pending && !m.text ? "thinking" : ""}">${body}${notes}${undo}${extra}</div>`;
   }).join("");
   log.scrollTop = log.scrollHeight;
   const busy = !!chatCtl;
@@ -1187,22 +1211,7 @@ async function sendToCoach(text) {
   text = String(text || "").trim();
   if (!text || chatCtl || coachDisabled) return;
   const sample = await getSample();
-  if (!sample) {
-    // App version: hand the message to Claude directly, with this week's data
-    const recent = sorted(recentIn(null, 14)).slice(0, 40).map((e) => `${e.date} [${e.area}] ${e.title}${entryMeta(e) ? " - " + entryMeta(e) : ""}`).join("\n") || "none yet";
-    const prompt = `I use my personal life-tracking app (gym, study, work, health, mood, goals). Today is ${new Date().toLocaleDateString("en-US", { weekday: "long" })}, ${today()}.
-My stats this week: ${JSON.stringify(stats(7))}
-Open goals: ${state.goals.filter((g) => !g.done).map((g) => g.text).join("; ") || "none"}
-What I logged in the last 14 days:
-${recent}
-
-My message: ${text}
-
-Reply like a supportive personal coach: short, specific and practical.`;
-    chat.push({ role: "user", text, notes: [] });
-    chat.push({ role: "assistant", text: "", notes: [], html: claudeLinkHTML(prompt, "Your message and this week's data are ready for Claude.") + `<p class="muted" style="font-size:12px;margin-top:6px">To save things you did, use the forms in each app (Gym, Study…).</p>` });
-    paintChat(); return;
-  }
+  if (!sample) return coachViaAgent(text);
 
   const history = chat.filter((m) => !m.err && m.text).slice(-16).map((m) => ({ role: m.role, content: m.text }));
   chat.push({ role: "user", text, notes: [] });
@@ -2129,6 +2138,140 @@ document.addEventListener("change", (ev) => {
   ev.target.value = "";
 });
 
+// ---------- Quick log and the agent (app version) ----------
+// Saving goes through the /agent function when signed in and online (so Undo and the AI work),
+// and straight to this phone otherwise. Without a Claude key the built-in parser does the reading.
+const Agent = !IN_CLAUDE && window.LifeAgent ? window.LifeAgent : null;
+const quick = { busy: false, res: null };
+let agentDeployed = null;
+const canUseServer = () => !!(Cloud && Agent && agentDeployed !== false && Cloud.status().signedIn && navigator.onLine !== false);
+const entryLine = (e) => `${AREA_LABEL[e.area] || "Other"}: ${e.title}${entryMeta(e) ? " · " + entryMeta(e) : ""}`;
+
+async function localRun(calls) {
+  const lines = [], local = [], failed = [];
+  for (const c of calls) {
+    try {
+      const i = c.input || {};
+      if (c.name === "log_entry") { const e = makeEntry(String(i.area), i); e.source = "quicklog"; await store.putEntry(e); lines.push(entryLine(e)); local.push({ kind: "entries", id: e.id }); }
+      else if (c.name === "create_goal") { const g = makeGoal(String(i.area || "other"), i.text, i.deadline); await store.putGoal(g); lines.push(`Goal: ${g.text}`); local.push({ kind: "goals", id: g.id }); }
+      else if (c.name === "create_reminder") { const r = makeReminder(i); await store.putReminder(r); lines.push(`Reminder: ${r.text}, ${whenLabel(r)}`); local.push({ kind: "reminders", id: r.id }); }
+    } catch (e) { failed.push("One item couldn't be saved."); }
+  }
+  return { lines, local, server: [], failed };
+}
+async function runCalls(calls) {
+  if (canUseServer()) {
+    try {
+      const r = await Agent.tools(calls);
+      await Cloud.sync();
+      return { lines: r.actions.map((a) => a.label), server: r.actions.map((a) => a.id), local: [], failed: r.results.filter((x) => !x.ok).map((x) => x.content) };
+    } catch (e) { if (e && e.code === "not_deployed") agentDeployed = false; }
+  }
+  return localRun(calls);
+}
+async function quickLog(text) {
+  let reason = null;
+  if (canUseServer()) {
+    try {
+      const r = await Agent.quicklog(text);
+      if (r.ai) { await Cloud.sync(); return { ai: true, reply: r.reply, lines: r.actions.map((a) => a.label), server: r.actions.map((a) => a.id), local: [], unknown: [], failed: [] }; }
+      reason = r.reason || null;
+    } catch (e) { if (e && e.code === "not_deployed") agentDeployed = false; }
+  }
+  const parsed = window.LifeQuickLog.parse(text);
+  const run = parsed.calls.length ? await runCalls(parsed.calls) : { lines: [], server: [], local: [], failed: [] };
+  return { ai: false, reason, ...run, unknown: parsed.unknown };
+}
+async function undoSaved(r) {
+  if (r.server && r.server.length) { await Agent.undo(r.server); await Cloud.sync(); }
+  for (const x of r.local || []) {
+    if (x.kind === "entries") await store.delEntry(x.id);
+    else if (x.kind === "goals") await store.delGoal(x.id);
+    else if (x.kind === "reminders") await store.delReminder(x.id);
+  }
+  r.undone = true;
+}
+const QUICK_EXAMPLES = "bench 60kg 4x8 · studied math 90 min · slept 7h, 5 glasses water · remind me gym every weekday 18:00";
+function paintQuick() {
+  const el = $("#quick-out"); if (!el) return;
+  const btn = $("#quick-btn"); if (btn) btn.disabled = quick.busy;
+  const r = quick.res;
+  if (quick.busy) { el.hidden = false; el.innerHTML = `<p class="muted">Saving…</p>`; return; }
+  if (!r) { el.hidden = true; return; }
+  el.hidden = false;
+  const misses = [...(r.unknown || []).map((u) => `Didn't understand: “${u}”`), ...(r.failed || [])];
+  const nothing = !r.lines.length;
+  el.innerHTML = `<div class="qres">
+    ${r.ai && r.reply ? `<p>${esc(r.reply)}</p>` : nothing ? "" : `<b>${r.undone ? "Undone" : "Saved"}</b>`}
+    <ul>${r.lines.map((l) => `<li class="${r.undone ? "gone" : ""}">${esc(l)}</li>`).join("")}${misses.map((m) => `<li class="miss">${esc(m)}</li>`).join("")}</ul>
+    ${nothing ? `<p class="muted" style="font-size:13px">Nothing was saved. Try it like this: ${esc(QUICK_EXAMPLES)}</p>` : ""}
+    ${!nothing && !r.undone ? `<div><button type="button" class="undo" data-quick-undo>Undo</button></div>` : ""}
+    ${r.reason === "budget" ? `<p class="muted" style="font-size:13px">This month's AI budget is used up, so the built-in parser read this.</p>` : ""}
+  </div>`;
+}
+document.addEventListener("click", async (ev) => {
+  const q = ev.target.closest("[data-quick-undo]"), c = ev.target.closest("[data-chat-undo]");
+  if (!q && !c) return;
+  const r = q ? quick.res : chat[Number(c.dataset.chatUndo)];
+  if (!r || r.undone) return;
+  (q || c).disabled = true;
+  try { await undoSaved(r); toast("Undone"); } catch (e) { toast("Couldn't undo. Check your connection."); }
+  if (q) paintQuick(); else paintChat();
+});
+
+function weekSummaryText() {
+  const s = stats(7), p = [];
+  p.push(`Gym: ${s.gym.sessions} training day${s.gym.sessions === 1 ? "" : "s"}, ${s.gym.exercises} exercises`);
+  p.push(`Study: ${s.study.hours} h in ${s.study.sessions} session${s.study.sessions === 1 ? "" : "s"}`);
+  p.push(`Work: ${s.work.hours} h, ${s.work.done} of ${s.work.tasks} tasks done`);
+  p.push(`Sleep: ${s.health.avgSleepHours !== null ? s.health.avgSleepHours + " h a night on average" : "nothing logged"}`);
+  p.push(`Mood: ${s.mood.average !== null ? s.mood.average + " / 5 on average" : "nothing logged"}`);
+  p.push(`Goals: ${s.goals.open} open, ${s.goals.done} completed`);
+  return "Your last 7 days:\n" + p.map((x) => "- " + x).join("\n");
+}
+
+// The coach in the app version: the real Claude agent when a key is set, a simple built-in coach otherwise.
+async function coachViaAgent(text) {
+  const history = chat.filter((m) => !m.err && m.text && !m.html).slice(-12).map((m) => ({ role: m.role, content: m.text }));
+  chat.push({ role: "user", text, notes: [] });
+  const bot = { role: "assistant", text: "", notes: [], pending: true, server: [], local: [] };
+  chat.push(bot);
+  const ctl = new AbortController(); chatCtl = ctl; paintChat();
+  try {
+    let res = null;
+    if (canUseServer()) {
+      try {
+        res = await Agent.chat({ text, history }, (ev) => {
+          if (ev.type === "text") { bot.text = ev.replace ? ev.delta : bot.text + ev.delta; paintChat(); }
+          else if (ev.type === "action") { bot.notes.push({ area: ev.action.table === "entries" ? "coach" : ev.action.table, text: ev.action.label }); bot.server.push(ev.action.id); paintChat(); }
+        }, ctl.signal);
+      } catch (e) {
+        if (bot.server.length) await Cloud.sync();
+        if (e && e.code === "cancelled") { bot.text = bot.text || "(Stopped)"; return; }
+        if (e && e.code === "stream") { bot.text = (bot.text ? bot.text + "\n\n" : "") + e.message; bot.err = !bot.server.length; return; }
+        if (e && e.code === "not_deployed") agentDeployed = false;
+      }
+    }
+    if (res && res.ai) { bot.text = res.reply || bot.text || "Done."; await Cloud.sync(); return; }
+
+    // No AI available: save what can be understood, answer simple questions from the numbers.
+    const parsed = window.LifeQuickLog.parse(text);
+    if (parsed.calls.length) {
+      const run = await runCalls(parsed.calls);
+      bot.server = run.server; bot.local = run.local;
+      bot.notes = run.lines.map((l) => ({ area: "coach", text: l }));
+      const misses = [...parsed.unknown.map((u) => `I didn't understand “${u}”.`), ...run.failed];
+      bot.text = (run.lines.length ? "Saved." : "I couldn't save that.") + (misses.length ? "\n" + misses.join("\n") : "");
+    } else if (/\b(week|progress|summary|report|stats|how\s+(am|was|is|did)\b)/i.test(text)) {
+      bot.text = weekSummaryText();
+    } else {
+      bot.text = `The AI coach isn't switched on yet${res && res.reason === "budget" ? " (this month's AI budget is used up)" : ""}. I can still save what you tell me, like “bench 60kg 4x8” or “slept 7h”, and show your numbers if you ask “how was my week?”.`;
+      const recent = sorted(recentIn(null, 14)).slice(0, 40).map((e) => `${e.date} [${e.area}] ${e.title}${entryMeta(e) ? " - " + entryMeta(e) : ""}`).join("\n") || "none yet";
+      bot.extraHtml = claudeLinkHTML(`I use a personal life-tracking app (gym, study, work, health, mood, goals). Today is ${today()}.\nMy stats this week: ${JSON.stringify(stats(7))}\nWhat I logged in the last 14 days:\n${recent}\n\nMy message: ${text}\n\nReply like a supportive personal coach: short, specific and practical.`, "Or ask Claude directly, with your data filled in:");
+    }
+  } finally { bot.pending = false; chatCtl = null; paintChat(); }
+}
+
 // ---------- Settings: account, cloud sync, data ----------
 const acct = { email: "", pw: "", busy: false, msg: "", key: "" };
 function paintSync(s) {
@@ -2164,7 +2307,7 @@ function paintAccount() {
   if (key !== acct.key) {
     acct.key = key;
     const msg = acct.msg ? `<p class="muted" style="font-size:13px" role="status">${esc(acct.msg)}</p>` : "";
-    if (!s) el.innerHTML = `<h2>Account</h2><p class="muted">Cloud backup isn't available in this version. Your data is saved on this device.</p>`;
+    if (!s) el.innerHTML = `<h2>Account</h2><p class="muted">Cloud backup isn't connected yet. Your data is saved on this device, and you can export it below.</p>`;
     else if (s.signedIn) el.innerHTML = `<h2>Account</h2><p>Signed in as <b>${esc(s.email || "you")}</b></p><p class="muted" style="font-size:13px" id="acct-status"></p>
       <div class="btns"><button type="button" class="btn" data-acct="sync">Sync now</button><button type="button" class="btn ghost" data-acct="signout">Sign out</button></div>`;
     else el.innerHTML = `<h2>Sign in</h2><p class="muted" style="font-size:13px">Sign in to keep your data safe in the cloud. First time here? Fill in both boxes and tap <b>Create account</b>.</p>

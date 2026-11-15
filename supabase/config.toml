@@ -1,0 +1,7 @@
+# Supabase CLI settings for Life Agent.
+project_id = "zqzihidanrkmnlvjwyqn"
+
+# /agent checks the user's session itself (and must answer the browser's CORS preflight,
+# which carries no token), so the gateway's own JWT check is off for it.
+[functions.agent]
+verify_jwt = false
